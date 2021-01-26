@@ -1,3 +1,6 @@
 [submodule "controller/tiny-AES-c"]
 	path = controller/tiny-AES-c
 	url = https://github.com/kokke/tiny-AES-c.git
+[submodule "controller/mbedtls"]
+	path = controller/mbedtls
+	url = https://github.com/ARMmbed/mbedtls.git
