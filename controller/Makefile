@@ -63,6 +63,16 @@ all: ${COMPILER}/aes.o
 endif
 ################ end crypto example ################
 
+################ start mbedtls ################
+MBEDTLS_PATH=./mbedtls
+VPATH+=${MBEDTLS_PATH}/library
+IPATH+=${MBEDTLS_PATH}/include
+LDFLAGS+=${COMPILER}/platform.o
+LDFLAGS+=${COMPILER}/memory_buffer_alloc.o
+CFLAGS+=-DMBEDTLS_CONFIG_FILE='"mbedtls-config.h"'
+all: ${COMPILER}/platform.o ${COMPILER}/memory_buffer_alloc.o
+################ end mbedtls ################
+
 # this must be the last build rule of `all`
 all: ${COMPILER}/controller.axf
 

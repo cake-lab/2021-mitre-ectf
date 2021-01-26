@@ -11,6 +11,9 @@
  */
 
 #include "controller.h"
+#include "mbedtls/memory_buffer_alloc.h"
+#include "mbedtls/platform.h"
+#include "mbedtls/ssl.h"
 
 // this will run if EXAMPLE_AES is defined in the Makefile (see line 54)
 #ifdef EXAMPLE_AES
@@ -24,6 +27,9 @@ char int2char(uint8_t i) {
 
 #define send_str(M) send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, strlen(M), M)
 #define BLOCK_SIZE 16
+
+// heap memory for mbedtls
+unsigned char memory_buf[5000];
 
 // message buffer
 char buf[SCEWL_MAX_DATA_SZ];
@@ -210,7 +216,20 @@ int sss_deregister() {
   return msg.op == SCEWL_SSS_DEREG;
 }
 
+void exit(int status) {
+  // QEMU doesn't provide a good way to gracefully exit for baremetal apps
+  // this is to intentionally crash QEMU with an error like
+  // "qemu-system-arm: Trying to execute code outside RAM or ROM at 0x77777776"
+  void (*die)(void) = (void (*)(void))0x77777777;
+  die();
+}
+
 int main() {
+  // heap memory for mbedtls
+  mbedtls_memory_buffer_alloc_init(memory_buf, sizeof(memory_buf));
+  // exit function for mbedtls
+  mbedtls_platform_set_exit(exit);
+
   int registered = 0, len;
   scewl_hdr_t hdr;
   uint16_t src_id, tgt_id;

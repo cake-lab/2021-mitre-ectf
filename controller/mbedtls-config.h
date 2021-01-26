@@ -32,6 +32,8 @@
 /* System support */
 #define MBEDTLS_HAVE_ASM
 #define MBEDTLS_HAVE_TIME
+#define MBEDTLS_PLATFORM_NO_STD_FUNCTIONS
+#define MBEDTLS_PLATFORM_EXIT_ALT
 
 /* Memory allocation */
 #define MBEDTLS_PLATFORM_C
