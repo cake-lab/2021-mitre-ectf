@@ -4,3 +4,6 @@
 [submodule "controller/mbedtls"]
 	path = controller/mbedtls
 	url = https://github.com/ARMmbed/mbedtls.git
+[submodule "controller/printf"]
+	path = controller/printf
+	url = https://github.com/mpaland/printf
