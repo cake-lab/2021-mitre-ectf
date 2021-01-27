@@ -73,6 +73,14 @@ CFLAGS+=-DMBEDTLS_CONFIG_FILE='"mbedtls-config.h"'
 all: ${COMPILER}/platform.o ${COMPILER}/memory_buffer_alloc.o
 ################ end mbedtls ################
 
+################ start printf ################
+PRINTF_PATH=./printf
+VPATH+=${PRINTF_PATH}
+IPATH+=${PRINTF_PATH}
+LDFLAGS+=${COMPILER}/printf.o
+all: ${COMPILER}/printf.o
+################ end printf ################
+
 # this must be the last build rule of `all`
 all: ${COMPILER}/controller.axf
 
