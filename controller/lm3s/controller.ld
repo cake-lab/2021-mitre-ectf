@@ -43,13 +43,29 @@ SECTIONS
         *(.rodata*)
         _etext = .;
     } > FLASH
-    .data : AT(ADDR(.text) + SIZEOF(.text))
+
+    .ARM.extab :
+    {
+        *(.ARM.extab* .gnu.linkonce.armextab.*)
+    } > FLASH
+
+    .ARM :
+    {
+        __exidx_start = .;
+        *(.ARM.exidx*)
+        __exidx_end = .;
+    } > FLASH
+
+    __end_code = .;
+
+    .data : AT(__end_code)
     {
         _data = .;
         *(vtable)
         *(.data*)
         _edata = .;
     } > SRAM
+
     .bss :
     {
         _bss = .;
@@ -57,7 +73,8 @@ SECTIONS
         *(COMMON)
         _ebss = .;
     } > SRAM
-		.stack : AT(ADDR(.bss) + SIZEOF(.bss))
+
+    .stack : AT(ADDR(.bss) + SIZEOF(.bss))
     {
         . = ALIGN(16);
         . += _STACK_SIZE;

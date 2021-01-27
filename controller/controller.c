@@ -10,10 +10,15 @@
  * and may not meet MITRE standards for quality. Use this code at your own risk!
  */
 
+#include <stdarg.h>
 #include "controller.h"
 #include "mbedtls/memory_buffer_alloc.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
+
+// Cannot include printf.h because it contains preprocessor defines that cause problems
+// This function is defined in printf.c
+int vsnprintf_(char* buffer, size_t count, const char* format, va_list va);
 
 // this will run if EXAMPLE_AES is defined in the Makefile (see line 54)
 #ifdef EXAMPLE_AES
@@ -27,6 +32,7 @@ char int2char(uint8_t i) {
 
 #define send_str(M) send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, strlen(M), M)
 #define BLOCK_SIZE 16
+#define MAX_PRINTF_LENGTH 16000
 
 // heap memory for mbedtls
 unsigned char memory_buf[5000];
@@ -216,6 +222,10 @@ int sss_deregister() {
   return msg.op == SCEWL_SSS_DEREG;
 }
 
+/*
+ * Implementation of exit that works by causing a segmentation fault.
+ * Copied from lm3s/startup_gcc.c
+ */
 void exit(int status) {
   // QEMU doesn't provide a good way to gracefully exit for baremetal apps
   // this is to intentionally crash QEMU with an error like
@@ -224,11 +234,35 @@ void exit(int status) {
   die();
 }
 
+/*
+ * Implementation of printf that sends the message over the air as an FAA message.
+ */
+int printf(const char *format, ...) {
+  va_list args;
+  char message[MAX_PRINTF_LENGTH];
+  int length = vsnprintf_(message, MAX_PRINTF_LENGTH, format, args);
+  if (length > MAX_PRINTF_LENGTH) {
+    length = MAX_PRINTF_LENGTH;
+  }
+  handle_faa_send(message, length);
+  return length;
+}
+
+/*
+ * Implementation of putchar that exits the program.
+ * This function should never be called but is required by the printf library to link successfully.
+ */
+void _putchar(char character) {
+  exit(1);
+}
+
 int main() {
   // heap memory for mbedtls
   mbedtls_memory_buffer_alloc_init(memory_buf, sizeof(memory_buf));
-  // exit function for mbedtls
+  // replacements for stdlib functions for mbedtls
   mbedtls_platform_set_exit(exit);
+  mbedtls_platform_set_printf(printf);
+  mbedtls_printf(">>>>>>>>>>>>>>> Hello, world! This is from mbedtls_printf.\n");
 
   int registered = 0, len;
   scewl_hdr_t hdr;
