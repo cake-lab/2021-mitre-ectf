@@ -15,10 +15,12 @@
 #include "mbedtls/memory_buffer_alloc.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
+#include "dtls.h"
 
 // Cannot include printf.h because it contains preprocessor defines that cause problems
-// This function is defined in printf.c
-int vsnprintf_(char* buffer, size_t count, const char* format, va_list va);
+// These functions are defined in printf.c
+int snprintf_(char *buffer, size_t count, const char *format, ...);
+int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
 
 // this will run if EXAMPLE_AES is defined in the Makefile (see line 54)
 #ifdef EXAMPLE_AES
@@ -33,6 +35,7 @@ char int2char(uint8_t i) {
 #define send_str(M) send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, strlen(M), M)
 #define BLOCK_SIZE 16
 #define MAX_PRINTF_LENGTH 16000
+#define DEBUG_LEVEL 0
 
 // heap memory for mbedtls
 unsigned char memory_buf[5000];
@@ -257,16 +260,23 @@ void _putchar(char character) {
 }
 
 int main() {
+  struct dtls_state dtls_state;
+  int registered = 0, len;
+  scewl_hdr_t hdr;
+  uint16_t src_id, tgt_id;
+
   // heap memory for mbedtls
   mbedtls_memory_buffer_alloc_init(memory_buf, sizeof(memory_buf));
   // replacements for stdlib functions for mbedtls
   mbedtls_platform_set_exit(exit);
   mbedtls_platform_set_printf(printf);
+  mbedtls_platform_set_snprintf(snprintf_);
+  mbedtls_platform_set_vsnprintf(vsnprintf_);
+#if defined(MBEDTLS_DEBUG_C)
+  mbedtls_debug_set_threshold(DEBUG_LEVEL);
+#endif
   mbedtls_printf(">>>>>>>>>>>>>>> Hello, world! This is from mbedtls_printf.\n");
-
-  int registered = 0, len;
-  scewl_hdr_t hdr;
-  uint16_t src_id, tgt_id;
+  dtls_setup(&dtls_state);
 
   // initialize interfaces
   intf_init(CPU_INTF);
