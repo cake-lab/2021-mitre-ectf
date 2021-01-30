@@ -38,7 +38,7 @@ char int2char(uint8_t i) {
 #define DEBUG_LEVEL 0
 
 // heap memory for mbedtls
-unsigned char memory_buf[5000];
+unsigned char memory_buf[3000];
 
 // message buffer
 char buf[SCEWL_MAX_DATA_SZ];
@@ -104,7 +104,7 @@ int read_msg(intf_t *intf, char *data, scewl_id_t *src_id, scewl_id_t *tgt_id,
 }
 
 
-int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, char *data) {
+int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, const char *data) {
   scewl_hdr_t hdr;
 
   // pack header
@@ -124,32 +124,32 @@ int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, c
 }
 
 
-int handle_scewl_recv(char* data, scewl_id_t src_id, uint16_t len) {
+int handle_scewl_recv(const char* data, scewl_id_t src_id, uint16_t len) {
   return send_msg(CPU_INTF, src_id, SCEWL_ID, len, data);
 }
 
 
-int handle_scewl_send(char* data, scewl_id_t tgt_id, uint16_t len) {
+int handle_scewl_send(const char* data, scewl_id_t tgt_id, uint16_t len) {
   return send_msg(RAD_INTF, SCEWL_ID, tgt_id, len, data);
 }
 
 
-int handle_brdcst_recv(char* data, scewl_id_t src_id, uint16_t len) {
+int handle_brdcst_recv(const char* data, scewl_id_t src_id, uint16_t len) {
   return send_msg(CPU_INTF, src_id, SCEWL_BRDCST_ID, len, data);
 }
 
 
-int handle_brdcst_send(char *data, uint16_t len) {
+int handle_brdcst_send(const char *data, uint16_t len) {
   return send_msg(RAD_INTF, SCEWL_ID, SCEWL_BRDCST_ID, len, data);
 }   
 
 
-int handle_faa_recv(char* data, uint16_t len) {
+int handle_faa_recv(const char* data, uint16_t len) {
   return send_msg(CPU_INTF, SCEWL_FAA_ID, SCEWL_ID, len, data);
 }
 
 
-int handle_faa_send(char* data, uint16_t len) {
+int handle_faa_send(const char* data, uint16_t len) {
   return send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, len, data);
 }
 

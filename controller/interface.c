@@ -79,7 +79,7 @@ void intf_writeb(intf_t *intf, uint8_t data) {
 
 
 // write the the interface
-int intf_write(intf_t *intf, void *buf, int16_t len) {
+int intf_write(intf_t *intf, const void *buf, int16_t len) {
   for (int i = 0; i < len; i++) {
     intf_writeb(intf, ((uint8_t *)buf)[i]);
   }

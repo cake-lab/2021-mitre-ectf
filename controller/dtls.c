@@ -6,25 +6,6 @@
 #include MBEDTLS_CONFIG_FILE
 #include "mbedtls/platform.h"
 
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-
-#include "mbedtls/entropy.h"
-#include "mbedtls/ctr_drbg.h"
-#include "mbedtls/certs.h"
-#include "mbedtls/x509.h"
-#include "mbedtls/ssl.h"
-#include "mbedtls/ssl_cookie.h"
-#include "mbedtls/net_sockets.h"
-#include "mbedtls/error.h"
-#include "mbedtls/debug.h"
-#include "mbedtls/timing.h"
-
-#if defined(MBEDTLS_SSL_CACHE_C)
-#include "mbedtls/ssl_cache.h"
-#endif
-
 #include "controller.h"
 #include "dtls.h"
 
@@ -35,6 +16,33 @@
  */
 static void my_debug(void *ctx, int level, const char *file, int line, const char *str) {
 	mbedtls_printf("[%d] %s:%04d: %s", level, file, line, str);
+}
+
+/*
+ * Callback used by mbedtls to set a timer.
+ */
+static void timers_set_delay(void *data, uint32_t int_ms, uint32_t fin_ms) {
+	struct timers *timers = (struct timers *) data;
+	// timers->start_time = clock();
+	timers->int_ms = int_ms;
+	timers->fin_ms = fin_ms;
+}
+
+/*
+ * Callback used by mbedtls to check if a timer has expired.
+ */
+static int timers_get_delay(void *data) {
+	struct timers *timers = (struct timers *) data;
+	// clock_t current_time = clock();
+	// uint32_t ms_elapsed = (current_time - timers->start_time) * 1000 / CLOCKS_PER_SEC;
+	if (timers->fin_ms == 0) {
+		return -1;
+	// } else if (ms_elapsed >= timers->fin_ms) {
+	// 	return 2;
+	// } else if (ms_elapsed >= timers->int_ms) {
+	// 	return 1;
+	}
+	return 0;
 }
 
 /*
@@ -96,18 +104,18 @@ static void dtls_fatal_error(struct dtls_state *state, int error_code) {
  * This is called a finite number of times when the DTLS server is starting up.
  * It is NOT called each time a client connects to the server.
  */
-static void dtls_server_session_setup(struct dtls_server_state *server_state, struct dtls_server_session_state *session_state) {
+static void dtls_server_session_setup(struct dtls_state *dtls_state, struct dtls_server_state *server_state, struct dtls_server_session_state *session_state) {
 	int ret;
 
 	mbedtls_ssl_init(&session_state->ssl);
 	ret = mbedtls_ssl_setup(&session_state->ssl, &server_state->conf);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_setup returned %d", ret);
-		dtls_fatal_error(&server_state, ret);
+		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
-	mbedtls_ssl_set_timer_cb(&session_state->ssl, &session_state->timer_ctx, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
+	mbedtls_ssl_set_timer_cb(&session_state->ssl, &session_state->timers, timers_set_delay, timers_get_delay);
 	mbedtls_ssl_set_mtu(&session_state->ssl, SCEWL_MAX_DATA_SZ);
 
 	session_state->valid = false;
@@ -131,7 +139,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	ret = mbedtls_ssl_config_defaults(&server_state->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_DATAGRAM, MBEDTLS_SSL_PRESET_DEFAULT);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_config_defaults returned %d", ret);
-		dtls_fatal_error(&dtls_state, ret);
+		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
@@ -147,14 +155,14 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	ret = mbedtls_ssl_conf_own_cert(&server_state->conf, &dtls_state->cert, &dtls_state->pkey);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned %d", ret);
-		dtls_fatal_error(&dtls_state, ret);
+		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
 	ret = mbedtls_ssl_cookie_setup(&server_state->cookie_ctx, mbedtls_ctr_drbg_random, &dtls_state->ctr_drbg);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_cookie_setup returned %d", ret);
-		dtls_fatal_error(&dtls_state, ret);
+		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
@@ -163,7 +171,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	mbedtls_ssl_conf_authmode(&server_state->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
 
 	for (int i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
-		dtls_server_session_setup(server_state, &server_state->sessions[i]);
+		dtls_server_session_setup(dtls_state, server_state, &server_state->sessions[i]);
 	}
 
 	mbedtls_printf("ok");
@@ -183,7 +191,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 	ret = mbedtls_ssl_config_defaults(&client_state->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_DATAGRAM, MBEDTLS_SSL_PRESET_DEFAULT);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_config_defaults returned %d", ret);
-		dtls_fatal_error(&dtls_state, ret);
+		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
@@ -195,7 +203,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 	ret = mbedtls_ssl_conf_own_cert(&client_state->conf, &dtls_state->cert, &dtls_state->pkey);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned %d", ret);
-		dtls_fatal_error(&dtls_state, ret);
+		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
@@ -205,11 +213,11 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 	ret = mbedtls_ssl_setup(&client_state->ssl, &client_state->conf);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_setup returned %d", ret);
-		dtls_fatal_error(&dtls_state, ret);
+		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
-	mbedtls_ssl_set_timer_cb(&client_state->ssl, &client_state->timer_ctx, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
+	mbedtls_ssl_set_timer_cb(&client_state->ssl, &client_state->timers, timers_set_delay, timers_get_delay);
 	mbedtls_ssl_set_mtu(&client_state->ssl, SCEWL_MAX_DATA_SZ);
 
 	mbedtls_printf("ok");
@@ -221,7 +229,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
  */
 void dtls_setup(struct dtls_state *state) {
 	int ret, len;
-	unsigned char pers[6];
+	char pers[6];
 
 	mbedtls_x509_crt_init(&state->cert);
 	mbedtls_pk_init(&state->pkey);
@@ -241,21 +249,21 @@ void dtls_setup(struct dtls_state *state) {
 	ret = mbedtls_x509_crt_parse(&state->cert, (const unsigned char *) mbedtls_test_srv_crt, mbedtls_test_srv_crt_len);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_x509_crt_parse returned %d", ret);
-		dtls_fatal_error(&state, ret);
+		dtls_fatal_error(state, ret);
 		return;
 	}
 
 	ret = mbedtls_x509_crt_parse(&state->cert, (const unsigned char *) mbedtls_test_cas_pem, mbedtls_test_cas_pem_len);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_x509_crt_parse returned %d", ret);
-		dtls_fatal_error(&state, ret);
+		dtls_fatal_error(state, ret);
 		return;
 	}
 
 	ret = mbedtls_pk_parse_key(&state->pkey, (const unsigned char *) mbedtls_test_srv_key, mbedtls_test_srv_key_len, NULL, 0);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_pk_parse_key returned %d", ret);
-		dtls_fatal_error(&state, ret);
+		dtls_fatal_error(state, ret);
 		return;
 	}
 
@@ -267,10 +275,10 @@ void dtls_setup(struct dtls_state *state) {
 	mbedtls_printf("Seeding the random number generator...");
 
 	len = mbedtls_snprintf(pers, 6, "%u", (unsigned int) SCEWL_ID);
-	ret = mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->entropy, pers, len);
+	ret = mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->entropy, (unsigned char *) pers, len);
 	if(ret != 0) {
 		mbedtls_printf("failed! mbedtls_ctr_drbg_seed returned %d", ret);
-		dtls_fatal_error(&state, ret);
+		dtls_fatal_error(state, ret);
 		return;
 	}
 
@@ -288,7 +296,7 @@ static int ssl_send(void *ctx, const unsigned char *buf, size_t len) {
 		return -1;
 	}
 	struct dtls_server_session_state *session_state = (struct dtls_server_session_state *) ctx;
-	handle_scewl_send(buf, session_state->client_scewl_id, len);
+	handle_scewl_send((const char *) buf, session_state->client_scewl_id, len);
 	return len;
 }
 
@@ -313,18 +321,18 @@ static int ssl_recv(void *ctx, unsigned char *buf, size_t len) {
 /*
  * Prepare a previously idle session to be used as an active session with a client.
  */
-static void dtls_server_session_startup(struct dtls_server_state *server_state, struct dtls_server_session_state *session_state) {
+static void dtls_server_session_startup(struct dtls_state *dtls_state, struct dtls_server_state *server_state, struct dtls_server_session_state *session_state) {
 	int ret, len;
-	unsigned char buf[6];
+	char buf[6];
 
 	mbedtls_ssl_session_reset(&session_state->ssl);
 
 	/* For HelloVerifyRequest cookies */
 	len = mbedtls_snprintf(buf, 6, "%u", (unsigned int) session_state->client_scewl_id);
-	ret = mbedtls_ssl_set_client_transport_id(&session_state->ssl, buf, len);
+	ret = mbedtls_ssl_set_client_transport_id(&session_state->ssl, (unsigned char *) buf, len);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_set_client_transport_id() returned -0x%x", (unsigned int) -ret);
-		dtls_fatal_error(&server_state, ret);
+		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
@@ -375,7 +383,7 @@ static void dtls_server_session_run(struct dtls_server_session_state *session_st
 		}
 	} else if (session_state->status == READ) {
 		do {
-			ret = mbedtls_ssl_read(&session_state->ssl, &session_state->message[session_state->message_len], SCEWL_MAX_DATA_SZ - session_state->message_len);
+			ret = mbedtls_ssl_read(&session_state->ssl, (unsigned char *) &session_state->message[session_state->message_len], SCEWL_MAX_DATA_SZ - session_state->message_len);
 			if (ret > 0) {
 				session_state->message_len += ret;
 			}
@@ -435,7 +443,7 @@ static void dtls_client_run(struct dtls_client_state *state) {
 	} else if (state->status == WRITE) {
 		pos = 0;
 		do {
-			ret = mbedtls_ssl_write(&state->ssl, &state->message[pos], state->message_len - pos);
+			ret = mbedtls_ssl_write(&state->ssl, (unsigned char *) &state->message[pos], state->message_len - pos);
 			if (ret > 0) {
 				pos += ret;
 				if (pos == state->message_len) {
@@ -499,7 +507,7 @@ void dtls_handle_packet(struct dtls_state *state, struct scewl_hdr_t header, cha
 				state->server_state.sessions[i].valid = true;
 				state->server_state.sessions[i].client_scewl_id = header.src_id;
 				session = &state->server_state.sessions[i];
-				dtls_server_session_startup(&state->server_state, session);
+				dtls_server_session_startup(state, &state->server_state, session);
 			}
 		}
 	}
@@ -527,13 +535,13 @@ void dtls_handle_packet(struct dtls_state *state, struct scewl_hdr_t header, cha
  */
 void dtls_check_timers(struct dtls_state *state) {
 	if (state->client_state.active) {
-		if (mbedtls_timing_get_delay(&state->client_state.timer_ctx) == 2) {
+		if (timers_get_delay(&state->client_state.timers) == 2) {
 				dtls_client_run(&state->client_state);
 			}
 	}
 	for (int i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
 		if (state->server_state.sessions[i].valid) {
-			if (mbedtls_timing_get_delay(&state->server_state.sessions[i].timer_ctx) == 2) {
+			if (timers_get_delay(&state->server_state.sessions[i].timers) == 2) {
 				dtls_server_session_run(&state->server_state.sessions[i]);
 			}
 		}

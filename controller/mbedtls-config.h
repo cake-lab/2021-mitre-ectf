@@ -31,12 +31,11 @@
 
 /* Debugging */
 #define MBEDTLS_DEBUG_C
-#define MBEDTLS_MEMORY_DEBUG
 #define MBEDTLS_ERROR_C
 
 /* System support */
 #define MBEDTLS_HAVE_ASM
-#define MBEDTLS_HAVE_TIME
+#define MBEDTLS_NO_PLATFORM_ENTROPY
 #define MBEDTLS_PLATFORM_NO_STD_FUNCTIONS
 #define MBEDTLS_PLATFORM_EXIT_ALT
 #define MBEDTLS_PLATFORM_PRINTF_ALT
@@ -55,6 +54,7 @@
 #define MBEDTLS_SSL_PROTO_TLS1_1
 #define MBEDTLS_SSL_PROTO_DTLS
 #define MBEDTLS_SSL_COOKIE_C
+#define MBEDTLS_SSL_DTLS_HELLO_VERIFY
 
 /* mbed TLS modules */
 #define MBEDTLS_AES_C
@@ -83,9 +83,6 @@
 #define MBEDTLS_BASE64_C
 #define MBEDTLS_CERTS_C
 #define MBEDTLS_PEM_PARSE_C
-
-/* For testing with compat.sh */
-#define MBEDTLS_FS_IO
 
 #include "mbedtls/check_config.h"
 

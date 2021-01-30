@@ -85,49 +85,49 @@ int read_msg(intf_t *intf, char *buf, scewl_id_t *src_id, scewl_id_t *tgt_id,
  *   len - the length of message
  *   data - pointer to the message
  */
-int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, char *data);
+int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, const char *data);
 
 /*
  * handle_scewl_recv
  * 
  * Interprets a SCEWL tranmission from another SED and sends the message to the CPU
  */
-int handle_scewl_recv(char* data, scewl_id_t src_id, uint16_t len);
+int handle_scewl_recv(const char* data, scewl_id_t src_id, uint16_t len);
 
 /*
  * handle_scewl_send
  * 
  * Sends a message to another SED from the CPU
  */
-int handle_scewl_send(char* buf, scewl_id_t tgt_id, uint16_t len);
+int handle_scewl_send(const char* buf, scewl_id_t tgt_id, uint16_t len);
 
 /*
  * handle_brdcst_recv
  * 
  * Interprets a broadcast message from another SED and passes it to the CPU
  */
-int handle_brdcst_recv(char* data, scewl_id_t src_id, uint16_t len);
+int handle_brdcst_recv(const char* data, scewl_id_t src_id, uint16_t len);
 
 /*
  * handle_brdcst_send
  * 
  * Broadcasts a message from the CPU to SEDS over the antenna
  */
-int handle_brdcst_send(char *data, uint16_t len);
+int handle_brdcst_send(const char *data, uint16_t len);
 
 /*
  * handle_faa_recv
  * 
  * Receives an FAA message from the antenna and passes it to the CPU
  */
-int handle_faa_recv(char* data, uint16_t len);
+int handle_faa_recv(const char* data, uint16_t len);
 
 /*
  * handle_faa_send
  * 
  * Sends an FAA message from the CPU to the antenna
  */
-int handle_faa_send(char* data, uint16_t len);
+int handle_faa_send(const char* data, uint16_t len);
 
 /*
  * handle_registration

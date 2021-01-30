@@ -1,4 +1,21 @@
+/*
+ * Author: Ryan LaPointe <ryan@ryanlapointe.org>
+ */
+
 #include <stdbool.h>
+
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/certs.h"
+#include "mbedtls/x509.h"
+#include "mbedtls/ssl.h"
+#include "mbedtls/ssl_cookie.h"
+#include "mbedtls/error.h"
+#include "mbedtls/debug.h"
+
+#if defined(MBEDTLS_SSL_CACHE_C)
+#include "mbedtls/ssl_cache.h"
+#endif
 
 /*
  * We can have multiple incoming (server) DTLS connections at a time.
@@ -13,10 +30,17 @@ enum dtls_session_status {
 	DONE
 };
 
+struct timers {
+	// clock_t start_time;
+	uint32_t int_ms;
+	uint32_t fin_ms;
+};
+
 struct dtls_server_session_state {
 	bool valid;
 	scewl_id_t client_scewl_id;
 	enum dtls_session_status status;
+	struct timers timers;
 
 	// encrypted data received over SCEWL
 	bool data_available;
@@ -29,7 +53,6 @@ struct dtls_server_session_state {
 
 	// mbedtls state
 	mbedtls_ssl_context ssl;
-	mbedtls_timing_delay_context timer_ctx;
 };
 
 struct dtls_server_state {
@@ -47,6 +70,7 @@ struct dtls_client_state {
 	bool active;
 	scewl_id_t server_scewl_id;
 	enum dtls_session_status status;
+	struct timers timers;
 
 	// plaintext message to send
 	char message[SCEWL_MAX_DATA_SZ];
@@ -60,7 +84,6 @@ struct dtls_client_state {
 	// mbedtls state
 	mbedtls_ssl_config conf;
 	mbedtls_ssl_context ssl;
-	mbedtls_timing_delay_context timer_ctx;
 };
 
 struct dtls_state {

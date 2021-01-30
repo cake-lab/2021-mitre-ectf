@@ -107,6 +107,6 @@ void intf_writeb(intf_t *intf, uint8_t data);
  *   INTF_OK on success
  *   INTF_ERR on failure
  */
-int intf_write(intf_t *intf, void *buf, int16_t len);
+int intf_write(intf_t *intf, const void *buf, int16_t len);
 
 #endif // INTERFACE_H

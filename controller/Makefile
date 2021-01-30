@@ -36,6 +36,8 @@ all: ${COMPILER}
 # the file that defines `main`, add the next two lines 
 LDFLAGS+=${COMPILER}/interface.o
 all: ${COMPILER}/interface.o
+LDFLAGS+=${COMPILER}/dtls.o
+all: ${COMPILER}/dtls.o
 
 ################ start crypto example ################
 # example AES rules to build in tiny-AES-c: https://github.com/kokke/tiny-AES-c
@@ -67,10 +69,77 @@ endif
 MBEDTLS_PATH=./mbedtls
 VPATH+=${MBEDTLS_PATH}/library
 IPATH+=${MBEDTLS_PATH}/include
-LDFLAGS+=${COMPILER}/platform.o
-LDFLAGS+=${COMPILER}/memory_buffer_alloc.o
 CFLAGS+=-DMBEDTLS_CONFIG_FILE='"mbedtls-config.h"'
-all: ${COMPILER}/platform.o ${COMPILER}/memory_buffer_alloc.o
+
+LDFLAGS+=${COMPILER}/aes.o
+LDFLAGS+=${COMPILER}/asn1parse.o
+LDFLAGS+=${COMPILER}/base64.o
+LDFLAGS+=${COMPILER}/bignum.o
+LDFLAGS+=${COMPILER}/certs.o
+LDFLAGS+=${COMPILER}/cipher.o
+LDFLAGS+=${COMPILER}/ctr_drbg.o
+LDFLAGS+=${COMPILER}/debug.o
+LDFLAGS+=${COMPILER}/des.o
+LDFLAGS+=${COMPILER}/entropy.o
+LDFLAGS+=${COMPILER}/error.o
+LDFLAGS+=${COMPILER}/md.o
+LDFLAGS+=${COMPILER}/md5.o
+LDFLAGS+=${COMPILER}/memory_buffer_alloc.o
+LDFLAGS+=${COMPILER}/oid.o
+LDFLAGS+=${COMPILER}/pem.o
+LDFLAGS+=${COMPILER}/pk.o
+LDFLAGS+=${COMPILER}/pkparse.o
+LDFLAGS+=${COMPILER}/pk_wrap.o
+LDFLAGS+=${COMPILER}/platform.o
+LDFLAGS+=${COMPILER}/platform_util.o
+LDFLAGS+=${COMPILER}/rsa.o
+LDFLAGS+=${COMPILER}/rsa_internal.o
+LDFLAGS+=${COMPILER}/sha1.o
+LDFLAGS+=${COMPILER}/sha256.o
+LDFLAGS+=${COMPILER}/ssl_cache.o
+LDFLAGS+=${COMPILER}/ssl_ciphersuites.o
+LDFLAGS+=${COMPILER}/ssl_cookie.o
+LDFLAGS+=${COMPILER}/ssl_msg.o
+LDFLAGS+=${COMPILER}/ssl_srv.o
+LDFLAGS+=${COMPILER}/ssl_tls.o
+LDFLAGS+=${COMPILER}/timing.o
+LDFLAGS+=${COMPILER}/x509.o
+LDFLAGS+=${COMPILER}/x509_crt.o
+
+all: ${COMPILER}/aes.o
+all: ${COMPILER}/asn1parse.o
+all: ${COMPILER}/base64.o
+all: ${COMPILER}/bignum.o
+all: ${COMPILER}/certs.o
+all: ${COMPILER}/cipher.o
+all: ${COMPILER}/ctr_drbg.o
+all: ${COMPILER}/debug.o
+all: ${COMPILER}/des.o
+all: ${COMPILER}/entropy.o
+all: ${COMPILER}/error.o
+all: ${COMPILER}/md.o
+all: ${COMPILER}/md5.o
+all: ${COMPILER}/memory_buffer_alloc.o
+all: ${COMPILER}/oid.o
+all: ${COMPILER}/pem.o
+all: ${COMPILER}/pk.o
+all: ${COMPILER}/pkparse.o
+all: ${COMPILER}/pk_wrap.o
+all: ${COMPILER}/platform.o
+all: ${COMPILER}/platform_util.o
+all: ${COMPILER}/rsa.o
+all: ${COMPILER}/rsa_internal.o
+all: ${COMPILER}/sha1.o
+all: ${COMPILER}/sha256.o
+all: ${COMPILER}/ssl_cache.o
+all: ${COMPILER}/ssl_ciphersuites.o
+all: ${COMPILER}/ssl_cookie.o
+all: ${COMPILER}/ssl_msg.o
+all: ${COMPILER}/ssl_srv.o
+all: ${COMPILER}/ssl_tls.o
+all: ${COMPILER}/timing.o
+all: ${COMPILER}/x509.o
+all: ${COMPILER}/x509_crt.o
 ################ end mbedtls ################
 
 ################ start printf ################
