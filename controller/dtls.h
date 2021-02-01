@@ -21,7 +21,7 @@
  * We can have multiple incoming (server) DTLS connections at a time.
  * We can have only one outgoing (client) DTLS connection at a time.
  */
-#define DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS 5
+#define DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS 1
 
 enum dtls_session_status {
 	HANDSHAKE,
@@ -73,7 +73,7 @@ struct dtls_client_state {
 	struct timers timers;
 
 	// plaintext message to send
-	char message[SCEWL_MAX_DATA_SZ];
+	char *message;
 	uint16_t message_len;
 
 	// encrypted data received over SCEWL

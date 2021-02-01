@@ -34,14 +34,8 @@ char int2char(uint8_t i) {
 
 #define send_str(M) send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, strlen(M), M)
 #define BLOCK_SIZE 16
-#define MAX_PRINTF_LENGTH 16000
+#define MAX_PRINTF_LENGTH 1000
 #define DEBUG_LEVEL 0
-
-// heap memory for mbedtls
-unsigned char memory_buf[3000];
-
-// message buffer
-char buf[SCEWL_MAX_DATA_SZ];
 
 
 int read_msg(intf_t *intf, char *data, scewl_id_t *src_id, scewl_id_t *tgt_id,
@@ -259,50 +253,21 @@ void _putchar(char character) {
   exit(1);
 }
 
-int main() {
-  struct dtls_state dtls_state;
+/*
+ * Used by mbedtls to zero memory.
+ * This implementation is not secure because it might be optimized out by the compiler.
+ * The default, more secure implementation was causing the application to crash.
+ */
+void mbedtls_platform_zeroize(void *buf, size_t len) {
+  memset(buf, 0, len);
+}
+
+static void main_loop(void) {
   int registered = 0, len;
   scewl_hdr_t hdr;
   uint16_t src_id, tgt_id;
-
-  // heap memory for mbedtls
-  mbedtls_memory_buffer_alloc_init(memory_buf, sizeof(memory_buf));
-  // replacements for stdlib functions for mbedtls
-  mbedtls_platform_set_exit(exit);
-  mbedtls_platform_set_printf(printf);
-  mbedtls_platform_set_snprintf(snprintf_);
-  mbedtls_platform_set_vsnprintf(vsnprintf_);
-#if defined(MBEDTLS_DEBUG_C)
-  mbedtls_debug_set_threshold(DEBUG_LEVEL);
-#endif
-  mbedtls_printf(">>>>>>>>>>>>>>> Hello, world! This is from mbedtls_printf.\n");
-  dtls_setup(&dtls_state);
-
-  // initialize interfaces
-  intf_init(CPU_INTF);
-  intf_init(SSS_INTF);
-  intf_init(RAD_INTF);
-
-#ifdef EXAMPLE_AES
-  // example encryption using tiny-AES-c
-  struct AES_ctx ctx;
-  uint8_t key[16] = { 0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf };
-  uint8_t plaintext[16] = "0123456789abcdef";
-
-  // initialize context
-  AES_init_ctx(&ctx, key);
-
-  // encrypt buffer (encryption happens in place)
-  AES_ECB_encrypt(&ctx, plaintext);
-  send_str("Example encrypted message:");
-  send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, BLOCK_SIZE, (char *)plaintext);
-
-  // decrypt buffer (decryption happens in place)
-  AES_ECB_decrypt(&ctx, plaintext);
-  send_str("Example decrypted message:");
-  send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, BLOCK_SIZE, (char *)plaintext);
-  // end example
-#endif
+  // message buffer
+  char buf[SCEWL_MAX_DATA_SZ];
 
   // serve forever
   while (1) {
@@ -350,4 +315,51 @@ int main() {
       }
     }
   }
+}
+
+int main() {
+  struct dtls_state dtls_state;
+  // heap memory for mbedtls
+  unsigned char memory_buf[10000];
+
+  // heap memory for mbedtls
+  mbedtls_memory_buffer_alloc_init(memory_buf, sizeof(memory_buf));
+  // replacements for stdlib functions for mbedtls
+  mbedtls_platform_set_exit(exit);
+  mbedtls_platform_set_printf(printf);
+  mbedtls_platform_set_snprintf(snprintf_);
+  mbedtls_platform_set_vsnprintf(vsnprintf_);
+#if defined(MBEDTLS_DEBUG_C)
+  mbedtls_debug_set_threshold(DEBUG_LEVEL);
+#endif
+  mbedtls_printf("Hello, world! This is from main.");
+  dtls_setup(&dtls_state);
+
+  // initialize interfaces
+  intf_init(CPU_INTF);
+  intf_init(SSS_INTF);
+  intf_init(RAD_INTF);
+
+#ifdef EXAMPLE_AES
+  // example encryption using tiny-AES-c
+  struct AES_ctx ctx;
+  uint8_t key[16] = { 0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf };
+  uint8_t plaintext[16] = "0123456789abcdef";
+
+  // initialize context
+  AES_init_ctx(&ctx, key);
+
+  // encrypt buffer (encryption happens in place)
+  AES_ECB_encrypt(&ctx, plaintext);
+  send_str("Example encrypted message:");
+  send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, BLOCK_SIZE, (char *)plaintext);
+
+  // decrypt buffer (decryption happens in place)
+  AES_ECB_decrypt(&ctx, plaintext);
+  send_str("Example decrypted message:");
+  send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, BLOCK_SIZE, (char *)plaintext);
+  // end example
+#endif
+
+  main_loop();
 }
