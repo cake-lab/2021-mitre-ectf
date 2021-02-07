@@ -325,6 +325,11 @@ int main() {
   // heap memory for mbedtls
   unsigned char memory_buf[10000];
 
+  // initialize interfaces
+  intf_init(CPU_INTF);
+  intf_init(SSS_INTF);
+  intf_init(RAD_INTF);
+
   // heap memory for mbedtls
   mbedtls_memory_buffer_alloc_init(memory_buf, sizeof(memory_buf));
   // replacements for stdlib functions for mbedtls
@@ -338,11 +343,7 @@ int main() {
   mbedtls_printf("Hello, world! This is from main.");
   dtls_setup(&dtls_state);
 
-  // initialize interfaces
-  intf_init(CPU_INTF);
-  intf_init(SSS_INTF);
-  intf_init(RAD_INTF);
-
+  
 #ifdef EXAMPLE_AES
   // example encryption using tiny-AES-c
   struct AES_ctx ctx;
