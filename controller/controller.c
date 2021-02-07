@@ -237,7 +237,10 @@ void exit(int status) {
 int printf(const char *format, ...) {
   va_list args;
   char message[MAX_PRINTF_LENGTH];
+
+  va_start(args, format);
   int length = vsnprintf_(message, MAX_PRINTF_LENGTH, format, args);
+  va_end(args);
   if (length > MAX_PRINTF_LENGTH) {
     length = MAX_PRINTF_LENGTH;
   }
