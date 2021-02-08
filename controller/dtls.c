@@ -87,7 +87,7 @@ static void dtls_print_error(int error_code) {
 #ifdef MBEDTLS_ERROR_C
 	char error_buf[100];
 	mbedtls_strerror(error_code, error_buf, 100);
-	mbedtls_printf("Last error was: %#06x %s", error_code, error_buf);
+	mbedtls_printf("Last error was: %#10x (-%#06x) %s", error_code, (unsigned int) -error_code, error_buf);
 #endif
 }
 
@@ -111,7 +111,7 @@ static void dtls_server_session_setup(struct dtls_state *dtls_state, struct dtls
 	mbedtls_ssl_init(&session_state->ssl);
 	ret = mbedtls_ssl_setup(&session_state->ssl, &server_state->conf);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_setup returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_ssl_setup returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
@@ -139,7 +139,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 
 	ret = mbedtls_ssl_config_defaults(&server_state->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_DATAGRAM, MBEDTLS_SSL_PRESET_DEFAULT);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_config_defaults returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_ssl_config_defaults returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
@@ -155,14 +155,14 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	mbedtls_ssl_conf_ca_chain(&server_state->conf, dtls_state->cert.next, NULL); // TODO
 	ret = mbedtls_ssl_conf_own_cert(&server_state->conf, &dtls_state->cert, &dtls_state->pkey);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
 	ret = mbedtls_ssl_cookie_setup(&server_state->cookie_ctx, mbedtls_ctr_drbg_random, &dtls_state->ctr_drbg);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_cookie_setup returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_ssl_cookie_setup returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
@@ -194,7 +194,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 
 	ret = mbedtls_ssl_config_defaults(&client_state->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_DATAGRAM, MBEDTLS_SSL_PRESET_DEFAULT);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_config_defaults returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_ssl_config_defaults returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
@@ -206,7 +206,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 	mbedtls_ssl_conf_ca_chain(&client_state->conf, dtls_state->cert.next, NULL); // TODO
 	ret = mbedtls_ssl_conf_own_cert(&client_state->conf, &dtls_state->cert, &dtls_state->pkey);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
@@ -216,7 +216,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 	mbedtls_ssl_init(&client_state->ssl);
 	ret = mbedtls_ssl_setup(&client_state->ssl, &client_state->conf);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_setup returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_ssl_setup returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
@@ -255,21 +255,21 @@ void dtls_setup(struct dtls_state *state) {
 	 */
 	ret = mbedtls_x509_crt_parse(&state->ca, (const unsigned char *) mbedtls_test_srv_crt, mbedtls_test_srv_crt_len);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_x509_crt_parse returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
 		return;
 	}
 
 	ret = mbedtls_x509_crt_parse(&state->cert, (const unsigned char *) mbedtls_test_srv_crt, mbedtls_test_srv_crt_len);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_x509_crt_parse returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
 		return;
 	}
 
 	ret = mbedtls_pk_parse_key(&state->pkey, (const unsigned char *) mbedtls_test_srv_key, mbedtls_test_srv_key_len, NULL, 0);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_pk_parse_key returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_pk_parse_key returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
 		return;
 	}
@@ -284,7 +284,7 @@ void dtls_setup(struct dtls_state *state) {
 	len = mbedtls_snprintf(pers, 6, "%u", (unsigned int) SCEWL_ID);
 	ret = mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->entropy, (unsigned char *) pers, len);
 	if(ret != 0) {
-		mbedtls_printf("failed! mbedtls_ctr_drbg_seed returned %#06x", ret);
+		mbedtls_printf("failed! mbedtls_ctr_drbg_seed returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
 		return;
 	}
@@ -341,7 +341,7 @@ static void dtls_server_session_startup(struct dtls_state *dtls_state, struct dt
 	len = mbedtls_snprintf(buf, 6, "%u", (unsigned int) session_state->client_scewl_id);
 	ret = mbedtls_ssl_set_client_transport_id(&session_state->ssl, (unsigned char *) buf, len);
 	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_set_client_transport_id() returned %#06x", (unsigned int) -ret);
+		mbedtls_printf("failed! mbedtls_ssl_set_client_transport_id returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
@@ -397,7 +397,7 @@ static void dtls_server_session_run(struct dtls_server_session_state *session_st
 			mbedtls_printf("handshake complete");
 			session_state->status = READ;
 		} else if (ret != MBEDTLS_ERR_SSL_WANT_READ) {
-			mbedtls_printf("failed! mbedtls_ssl_handshake returned %#06x", (unsigned int) -ret);
+			mbedtls_printf("failed! mbedtls_ssl_handshake returned -%#06x", (unsigned int) -ret);
 			dtls_print_error(ret);
 			session_state->status = DONE;
 		}
@@ -420,7 +420,7 @@ static void dtls_server_session_run(struct dtls_server_session_state *session_st
 				session_state->status = DONE;
 				break;
 			default:
-				mbedtls_printf("mbedtls_ssl_read returned %#06x", (unsigned int) -ret);
+				mbedtls_printf("mbedtls_ssl_read returned -%#06x", (unsigned int) -ret);
 				dtls_print_error(ret);
 				session_state->status = DONE;
 		}
@@ -447,7 +447,7 @@ static void dtls_client_run(struct dtls_client_state *state) {
 			mbedtls_printf("handshake complete");
 			state->status = WRITE;
 		} else if (ret != MBEDTLS_ERR_SSL_WANT_READ) {
-			mbedtls_printf("failed! mbedtls_ssl_handshake returned %#06x", (unsigned int) -ret);
+			mbedtls_printf("failed! mbedtls_ssl_handshake returned -%#06x", (unsigned int) -ret);
 			dtls_print_error(ret);
 			state->status = DONE;
 		}
@@ -464,7 +464,7 @@ static void dtls_client_run(struct dtls_client_state *state) {
 			}
 		} while (ret > 0);
 		if (ret < 0 && ret != MBEDTLS_ERR_SSL_WANT_READ) {
-			mbedtls_printf("mbedtls_ssl_write returned %#06x", (unsigned int) -ret);
+			mbedtls_printf("mbedtls_ssl_write returned -%#06x", (unsigned int) -ret);
 			dtls_print_error(ret);
 			state->status = DONE;
 		}
