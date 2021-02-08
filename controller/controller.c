@@ -323,7 +323,7 @@ static void main_loop(void) {
 int main() {
   struct dtls_state dtls_state;
   // heap memory for mbedtls
-  unsigned char memory_buf[10000];
+  unsigned char memory_buf[16000];
 
   // initialize interfaces
   intf_init(CPU_INTF);
