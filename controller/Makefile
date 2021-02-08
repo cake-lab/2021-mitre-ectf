@@ -77,6 +77,7 @@ LDFLAGS+=${COMPILER}/base64.o
 LDFLAGS+=${COMPILER}/bignum.o
 LDFLAGS+=${COMPILER}/certs.o
 LDFLAGS+=${COMPILER}/cipher.o
+LDFLAGS+=${COMPILER}/cipher_wrap.o
 LDFLAGS+=${COMPILER}/ctr_drbg.o
 LDFLAGS+=${COMPILER}/debug.o
 LDFLAGS+=${COMPILER}/des.o
@@ -98,6 +99,7 @@ LDFLAGS+=${COMPILER}/sha1.o
 LDFLAGS+=${COMPILER}/sha256.o
 LDFLAGS+=${COMPILER}/ssl_cache.o
 LDFLAGS+=${COMPILER}/ssl_ciphersuites.o
+LDFLAGS+=${COMPILER}/ssl_cli.o
 LDFLAGS+=${COMPILER}/ssl_cookie.o
 LDFLAGS+=${COMPILER}/ssl_msg.o
 LDFLAGS+=${COMPILER}/ssl_srv.o
@@ -112,6 +114,7 @@ all: ${COMPILER}/base64.o
 all: ${COMPILER}/bignum.o
 all: ${COMPILER}/certs.o
 all: ${COMPILER}/cipher.o
+all: ${COMPILER}/cipher_wrap.o
 all: ${COMPILER}/ctr_drbg.o
 all: ${COMPILER}/debug.o
 all: ${COMPILER}/des.o
@@ -133,6 +136,7 @@ all: ${COMPILER}/sha1.o
 all: ${COMPILER}/sha256.o
 all: ${COMPILER}/ssl_cache.o
 all: ${COMPILER}/ssl_ciphersuites.o
+all: ${COMPILER}/ssl_cli.o
 all: ${COMPILER}/ssl_cookie.o
 all: ${COMPILER}/ssl_msg.o
 all: ${COMPILER}/ssl_srv.o

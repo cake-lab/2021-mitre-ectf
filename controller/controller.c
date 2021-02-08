@@ -265,7 +265,7 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
   memset(buf, 0, len);
 }
 
-static void main_loop(void) {
+static void main_loop(struct dtls_state *dtls_state) {
   int registered = 0, len;
   scewl_hdr_t hdr;
   uint16_t src_id, tgt_id;
@@ -297,7 +297,7 @@ static void main_loop(void) {
         } else if (tgt_id == SCEWL_FAA_ID) {
           handle_faa_send(buf, len);
         } else {
-          handle_scewl_send(buf, tgt_id, len);
+          dtls_send_message(dtls_state, tgt_id, buf, len);
         }
 
         continue;
@@ -313,7 +313,7 @@ static void main_loop(void) {
         } else if (src_id == SCEWL_FAA_ID) {
           handle_faa_recv(buf, len);
         } else {
-          handle_scewl_recv(buf, src_id, len);
+          dtls_handle_packet(dtls_state, src_id, buf, len);
         }
       }
     }
@@ -365,5 +365,5 @@ int main() {
   // end example
 #endif
 
-  main_loop();
+  main_loop(&dtls_state);
 }

@@ -45,11 +45,11 @@ struct dtls_server_session_state {
 	// encrypted data received over SCEWL
 	bool data_available;
 	char *data;
-	uint16_t data_len;
+	size_t data_len;
 
 	// decrypted message
 	char message[SCEWL_MAX_DATA_SZ];
-	uint16_t message_len;
+	size_t message_len;
 
 	// mbedtls state
 	mbedtls_ssl_context ssl;
@@ -74,12 +74,12 @@ struct dtls_client_state {
 
 	// plaintext message to send
 	char *message;
-	uint16_t message_len;
+	size_t message_len;
 
 	// encrypted data received over SCEWL
 	bool data_available;
 	char *data;
-	uint16_t data_len;
+	size_t data_len;
 
 	// mbedtls state
 	mbedtls_ssl_config conf;
@@ -101,5 +101,6 @@ struct dtls_state {
 
 void dtls_teardown(struct dtls_state *state);
 void dtls_setup(struct dtls_state *state);
-void dtls_handle_packet(struct dtls_state *state, struct scewl_hdr_t header, char *data);
+void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *message, size_t message_len);
+void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data, size_t data_len);
 void dtls_check_timers(struct dtls_state *state);
