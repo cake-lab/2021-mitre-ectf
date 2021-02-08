@@ -87,6 +87,7 @@ struct dtls_client_state {
 };
 
 struct dtls_state {
+	bool fatal_error;
 	struct dtls_server_state server_state;
 	struct dtls_client_state client_state;
 

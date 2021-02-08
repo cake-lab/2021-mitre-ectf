@@ -95,6 +95,7 @@ static void dtls_print_error(int error_code) {
  * Handle a fatal error.
  */
 static void dtls_fatal_error(struct dtls_state *state, int error_code) {
+	state->fatal_error = true;
 	dtls_print_error(error_code);
 	dtls_teardown(state);
 }
@@ -172,6 +173,9 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 
 	for (int i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
 		dtls_server_session_setup(dtls_state, server_state, &server_state->sessions[i]);
+		if (dtls_state->fatal_error) {
+			return;
+		}
 	}
 
 	mbedtls_printf("ok");
@@ -231,6 +235,8 @@ void dtls_setup(struct dtls_state *state) {
 	int ret, len;
 	char pers[6];
 
+	state->fatal_error = false;
+
 	mbedtls_x509_crt_init(&state->ca);
 	mbedtls_x509_crt_init(&state->cert);
 	mbedtls_pk_init(&state->pkey);
@@ -286,6 +292,9 @@ void dtls_setup(struct dtls_state *state) {
 	mbedtls_printf( "ok" );
 
 	dtls_server_setup(state, &state->server_state);
+	if (state->fatal_error) {
+		return;
+	}
 	dtls_client_setup(state, &state->client_state);
 }
 
@@ -474,6 +483,11 @@ static void dtls_client_run(struct dtls_client_state *state) {
  */
 void dtls_handle_packet(struct dtls_state *state, struct scewl_hdr_t header, char *data) {
 	int i;
+
+	// If state->fatal_error is true, then we have already experienced a fatal error and cannot proceed.
+	if (state->fatal_error) {
+		return;
+	}
 
 	/*
 	 * DTLS client packet handling
