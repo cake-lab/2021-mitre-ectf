@@ -53,7 +53,9 @@ static int timers_get_delay(void *data) {
 static void dtls_server_teardown(struct dtls_server_state *state) {
 	mbedtls_ssl_free(&state->ssl);
 	mbedtls_ssl_config_free(&state->conf);
+#ifdef MBEDTLS_SSL_DTLS_HELLO_VERIFY
 	mbedtls_ssl_cookie_free(&state->cookie_ctx);
+#endif
 #if defined(MBEDTLS_SSL_CACHE_C)
 	mbedtls_ssl_cache_free(&state->cache);
 #endif
@@ -108,7 +110,9 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	int ret;
 
 	mbedtls_ssl_config_init(&server_state->conf);
+#ifdef MBEDTLS_SSL_DTLS_HELLO_VERIFY
 	mbedtls_ssl_cookie_init(&server_state->cookie_ctx);
+#endif
 #if defined(MBEDTLS_SSL_CACHE_C)
 	mbedtls_ssl_cache_init(&server_state->cache);
 #endif
@@ -138,6 +142,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 		return;
 	}
 
+#ifdef MBEDTLS_SSL_DTLS_HELLO_VERIFY
 	ret = mbedtls_ssl_cookie_setup(&server_state->cookie_ctx, mbedtls_ctr_drbg_random, &dtls_state->ctr_drbg);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_cookie_setup returned -%#06x", (unsigned int) -ret);
@@ -146,6 +151,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	}
 
 	mbedtls_ssl_conf_dtls_cookies(&server_state->conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check, &server_state->cookie_ctx);
+#endif
 
 	mbedtls_ssl_conf_authmode(&server_state->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
 
@@ -358,6 +364,7 @@ static void dtls_server_startup(struct dtls_state *dtls_state, struct dtls_serve
 	}
 
 	/* For HelloVerifyRequest cookies */
+#ifdef MBEDTLS_SSL_DTLS_HELLO_VERIFY
 	len = mbedtls_snprintf(buf, 6, "%u", (unsigned int) server_state->client_scewl_id);
 	ret = mbedtls_ssl_set_client_transport_id(&server_state->ssl, (unsigned char *) buf, len);
 	if (ret != 0) {
@@ -365,6 +372,7 @@ static void dtls_server_startup(struct dtls_state *dtls_state, struct dtls_serve
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
+#endif
 
 	mbedtls_ssl_set_bio(&server_state->ssl, server_state, dtls_server_ssl_send, dtls_server_ssl_recv, NULL);
 
