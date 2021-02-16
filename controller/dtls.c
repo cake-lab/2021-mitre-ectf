@@ -50,9 +50,7 @@ static int timers_get_delay(void *data) {
  * Teardown the DTLS server. This is called once when the program is going to exit.
  */
 static void dtls_server_teardown(struct dtls_server_state *state) {
-	for (int i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
-		mbedtls_ssl_free(&state->sessions[i].ssl);
-	}
+	mbedtls_ssl_free(&state->ssl);
 	mbedtls_ssl_config_free(&state->conf);
 	mbedtls_ssl_cookie_free(&state->cookie_ctx);
 #if defined(MBEDTLS_SSL_CACHE_C)
@@ -96,31 +94,9 @@ static void dtls_print_error(int error_code) {
  * Handle a fatal error.
  */
 static void dtls_fatal_error(struct dtls_state *state, int error_code) {
-	state->fatal_error = true;
+	state->status = FATAL_ERROR;
 	dtls_print_error(error_code);
 	dtls_teardown(state);
-}
-
-/*
- * Initialize a DTLS session.
- * This is called a finite number of times when the DTLS server is starting up.
- * It is NOT called each time a client connects to the server.
- */
-static void dtls_server_session_setup(struct dtls_state *dtls_state, struct dtls_server_state *server_state, struct dtls_server_session_state *session_state) {
-	int ret;
-
-	mbedtls_ssl_init(&session_state->ssl);
-	ret = mbedtls_ssl_setup(&session_state->ssl, &server_state->conf);
-	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_ssl_setup returned -%#06x", (unsigned int) -ret);
-		dtls_fatal_error(dtls_state, ret);
-		return;
-	}
-
-	mbedtls_ssl_set_timer_cb(&session_state->ssl, &session_state->timers, timers_set_delay, timers_get_delay);
-	mbedtls_ssl_set_mtu(&session_state->ssl, SCEWL_MAX_DATA_SZ);
-
-	session_state->valid = false;
 }
 
 /*
@@ -172,12 +148,16 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 
 	mbedtls_ssl_conf_authmode(&server_state->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
 
-	for (int i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
-		dtls_server_session_setup(dtls_state, server_state, &server_state->sessions[i]);
-		if (dtls_state->fatal_error) {
-			return;
-		}
+	mbedtls_ssl_init(&server_state->ssl);
+	ret = mbedtls_ssl_setup(&server_state->ssl, &server_state->conf);
+	if (ret != 0) {
+		mbedtls_printf("failed! mbedtls_ssl_setup returned -%#06x", (unsigned int) -ret);
+		dtls_fatal_error(dtls_state, ret);
+		return;
 	}
+
+	mbedtls_ssl_set_timer_cb(&server_state->ssl, &server_state->timers, timers_set_delay, timers_get_delay);
+	mbedtls_ssl_set_mtu(&server_state->ssl, SCEWL_MAX_DATA_SZ);
 
 	mbedtls_printf("ok");
 }
@@ -236,7 +216,7 @@ void dtls_setup(struct dtls_state *state) {
 	int ret, len;
 	char pers[6];
 
-	state->fatal_error = false;
+	state->status = IDLE;
 
 	mbedtls_x509_crt_init(&state->ca);
 	mbedtls_x509_crt_init(&state->cert);
@@ -293,7 +273,7 @@ void dtls_setup(struct dtls_state *state) {
 	mbedtls_printf( "ok" );
 
 	dtls_server_setup(state, &state->server_state);
-	if (state->fatal_error) {
+	if (state->status == FATAL_ERROR) {
 		return;
 	}
 	dtls_client_setup(state, &state->client_state);
@@ -308,8 +288,8 @@ static int dtls_server_ssl_send(void *ctx, const unsigned char *buf, size_t len)
 	if (len > SCEWL_MAX_DATA_SZ) {
 		return -1;
 	}
-	struct dtls_server_session_state *session_state = (struct dtls_server_session_state *) ctx;
-	handle_scewl_send((const char *) buf, session_state->client_scewl_id, len);
+	struct dtls_server_state *state = (struct dtls_server_state *) ctx;
+	handle_scewl_send((const char *) buf, state->client_scewl_id, len);
 	return len;
 }
 
@@ -317,16 +297,16 @@ static int dtls_server_ssl_send(void *ctx, const unsigned char *buf, size_t len)
  * Receive data from the client of an active session.
  */
 static int dtls_server_ssl_recv(void *ctx, unsigned char *buf, size_t len) {
-	struct dtls_server_session_state *session_state = (struct dtls_server_session_state *) ctx;
-	if (!session_state->data_available) {
+	struct dtls_server_state *state = (struct dtls_server_state *) ctx;
+	if (!state->data_available) {
 		return MBEDTLS_ERR_SSL_WANT_READ;
 	}
-	size_t bytes_to_copy = len <= session_state->data_len ? len : session_state->data_len;
-	memcpy(buf, session_state->data, bytes_to_copy);
-	session_state->data_len -= bytes_to_copy;
-	session_state->data += bytes_to_copy;
-	if (session_state->data_len == 0) {
-		session_state->data_available = false;
+	size_t bytes_to_copy = len <= state->data_len ? len : state->data_len;
+	memcpy(buf, state->data, bytes_to_copy);
+	state->data_len -= bytes_to_copy;
+	state->data += bytes_to_copy;
+	if (state->data_len == 0) {
+		state->data_available = false;
 	}
 	return bytes_to_copy;
 }
@@ -362,13 +342,13 @@ static int dtls_client_ssl_recv(void *ctx, unsigned char *buf, size_t len) {
 }
 
 /*
- * Prepare a previously idle session to be used as an active session with a client.
+ * Prepare the server for a connection from a client.
  */
-static void dtls_server_session_startup(struct dtls_state *dtls_state, struct dtls_server_state *server_state, struct dtls_server_session_state *session_state) {
+static void dtls_server_startup(struct dtls_state *dtls_state, struct dtls_server_state *server_state) {
 	int ret, len;
 	char buf[6];
 
-	ret = mbedtls_ssl_session_reset(&session_state->ssl);
+	ret = mbedtls_ssl_session_reset(&server_state->ssl);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_session_reset returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
@@ -376,28 +356,28 @@ static void dtls_server_session_startup(struct dtls_state *dtls_state, struct dt
 	}
 
 	/* For HelloVerifyRequest cookies */
-	len = mbedtls_snprintf(buf, 6, "%u", (unsigned int) session_state->client_scewl_id);
-	ret = mbedtls_ssl_set_client_transport_id(&session_state->ssl, (unsigned char *) buf, len);
+	len = mbedtls_snprintf(buf, 6, "%u", (unsigned int) server_state->client_scewl_id);
+	ret = mbedtls_ssl_set_client_transport_id(&server_state->ssl, (unsigned char *) buf, len);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_set_client_transport_id returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
 
-	mbedtls_ssl_set_bio(&session_state->ssl, session_state, dtls_server_ssl_send, dtls_server_ssl_recv, NULL);
+	mbedtls_ssl_set_bio(&server_state->ssl, server_state, dtls_server_ssl_send, dtls_server_ssl_recv, NULL);
 
-	session_state->data_available = false;
-	session_state->message_len = 0;
-	session_state->status = HANDSHAKE;
+	server_state->data_available = false;
+	server_state->message_len = 0;
+	server_state->status = HANDSHAKE;
 }
 
 /*
- * Give the specified session some data that we received.
+ * Give the server some data that we received.
  */
-static void dtls_server_session_feed(struct dtls_server_session_state *session_state, char *data, size_t data_len) {
-	session_state->data = data;
-	session_state->data_len = data_len;
-	session_state->data_available = true;
+static void dtls_server_feed(struct dtls_server_state *server_state, char *data, size_t data_len) {
+	server_state->data = data;
+	server_state->data_len = data_len;
+	server_state->data_available = true;
 }
 
 /*
@@ -421,7 +401,7 @@ static void dtls_client_startup(struct dtls_state *dtls_state, struct dtls_clien
 }
 
 /*
- * Give the client session some data that we received.
+ * Give the client some data that we received.
  */
 static void dtls_client_feed(struct dtls_client_state *state, char *data, size_t data_len) {
 	state->data = data;
@@ -430,30 +410,30 @@ static void dtls_client_feed(struct dtls_client_state *state, char *data, size_t
 }
 
 /*
- * Do some processing for the specified session.
+ * Do some processing for the server session.
  */
-static void dtls_server_session_run(struct dtls_server_session_state *session_state) {
+static void dtls_server_run(struct dtls_server_state *server_state) {
 	int ret;
 
-	if (session_state->status == HANDSHAKE) {
-		ret = mbedtls_ssl_handshake(&session_state->ssl);
+	if (server_state->status == HANDSHAKE) {
+		ret = mbedtls_ssl_handshake(&server_state->ssl);
 
 		if (ret == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
 			mbedtls_printf("hello verification requested");
-			session_state->status = DONE;
+			server_state->status = DONE;
 		} else if (ret == 0) {
 			mbedtls_printf("handshake complete");
-			session_state->status = READ;
+			server_state->status = READ;
 		} else if (ret != MBEDTLS_ERR_SSL_WANT_READ) {
 			mbedtls_printf("failed! mbedtls_ssl_handshake returned -%#06x", (unsigned int) -ret);
 			dtls_print_error(ret);
-			session_state->status = DONE;
+			server_state->status = DONE;
 		}
-	} else if (session_state->status == READ) {
+	} else if (server_state->status == READ) {
 		do {
-			ret = mbedtls_ssl_read(&session_state->ssl, (unsigned char *) &session_state->message[session_state->message_len], SCEWL_MAX_DATA_SZ - session_state->message_len);
+			ret = mbedtls_ssl_read(&server_state->ssl, (unsigned char *) &server_state->message[server_state->message_len], SCEWL_MAX_DATA_SZ - server_state->message_len);
 			if (ret > 0) {
-				session_state->message_len += ret;
+				server_state->message_len += ret;
 			}
 		} while (ret > 0);
 		switch (ret) {
@@ -461,23 +441,23 @@ static void dtls_server_session_run(struct dtls_server_session_state *session_st
 				break;
 			case MBEDTLS_ERR_SSL_TIMEOUT:
 				mbedtls_printf("timeout");
-				session_state->status = DONE;
+				server_state->status = DONE;
 				break;
 			case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
 				mbedtls_printf("session was closed gracefully");
-				session_state->status = DONE;
+				server_state->status = DONE;
 				break;
 			default:
 				mbedtls_printf("mbedtls_ssl_read returned -%#06x", (unsigned int) -ret);
 				dtls_print_error(ret);
-				session_state->status = DONE;
+				server_state->status = DONE;
 		}
 	}
 
-	if (session_state->status == DONE) {
+	if (server_state->status == DONE) {
 		mbedtls_printf("Closing the connection...");
 		// No error checking, the connection might be closed already
-		mbedtls_ssl_close_notify(&session_state->ssl);
+		mbedtls_ssl_close_notify(&server_state->ssl);
 		mbedtls_printf("done");
 	}
 }
@@ -530,22 +510,23 @@ static void dtls_client_run(struct dtls_client_state *state) {
  * Send a message to another SED.
  */
 void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *message, size_t message_len) {
-	if (state->client_state.active) {
-		// There is already a message in the process of being sent. Cannot accept another message right now.
-		mbedtls_printf("Tried to send a message while another message is currently being sent.");
-		return;
-	}
-	for (int i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
-		if (state->server_state.sessions[i].valid && state->server_state.sessions[i].client_scewl_id == dst_id) {
-			// There is an active connection with the specified peer, but in the opposite direction.
-			mbedtls_printf("Tried to send a message while receiving a message from the same peer.");
+	switch (state->status) {
+		case FATAL_ERROR:
+			mbedtls_printf("The DTLS subsystem is in FATAL_ERROR state.");
 			return;
-		}
+		case SENDING_MESSAGE:
+		case RECEIVING_MESSAGE:
+			// Should never happen
+			mbedtls_printf("Attempted to send a message while there is an active session.");
+			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+			return;
+		case IDLE:
+			state->status = SENDING_MESSAGE;
+			state->client_state.server_scewl_id = dst_id;
+			dtls_client_startup(state, &state->client_state, message, message_len);
+			dtls_client_run(&state->client_state);
+			return;
 	}
-	state->client_state.active = true;
-	state->client_state.server_scewl_id = dst_id;
-	dtls_client_startup(state, &state->client_state, message, message_len);
-	dtls_client_run(&state->client_state);
 }
 
 /*
@@ -554,67 +535,60 @@ void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *messag
 void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data, size_t data_len) {
 	int i;
 
-	// If state->fatal_error is true, then we have already experienced a fatal error and cannot proceed.
-	if (state->fatal_error) {
-		return;
-	}
-
-	/*
-	 * DTLS client packet handling
-	 */
-
-	if (state->client_state.active && state->client_state.server_scewl_id == src_id) {
-		// Give the session the data that we received
-		dtls_client_feed(&state->client_state, data, data_len);
-		dtls_client_run(&state->client_state);
-		if (state->client_state.status == DONE) {
-			mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->client_state.server_scewl_id, state->client_state.message_len, state->client_state.message);
-			// TODO tell the CPU the message was sent?
-			state->client_state.active = false;
-		}
-		return;
-	}
-
-	/*
-	 * DTLS server packet handling
-	 */
-
-	struct dtls_server_session_state *session = NULL;
-	// Find the existing session with this client
-	for (i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
-		if (state->server_state.sessions[i].valid && state->server_state.sessions[i].client_scewl_id == src_id) {
-			session = &state->server_state.sessions[i];
-		}
-	}
-	if (session == NULL) {
-		// There is no existing session with this client
-		// Start a new session with this client
-		for (i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
-			if (!state->server_state.sessions[i].valid) {
-				state->server_state.sessions[i].valid = true;
-				state->server_state.sessions[i].client_scewl_id = src_id;
-				session = &state->server_state.sessions[i];
-				dtls_server_session_startup(state, &state->server_state, session);
+	switch (state->status) {
+		case FATAL_ERROR:
+			mbedtls_printf("The DTLS subsystem is in FATAL_ERROR state.");
+			return;
+		case SENDING_MESSAGE:
+			// DTLS client packet handling
+			if (state->client_state.server_scewl_id == src_id) {
+				if (state->client_state.data_available) {
+					// Should never happen
+					mbedtls_printf("data_available already set.");
+					dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+					return;
+				}
+				// Give the session the data that we received
+				dtls_client_feed(&state->client_state, data, data_len);
+				dtls_client_run(&state->client_state);
+				if (state->client_state.status == DONE) {
+					mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->client_state.server_scewl_id, state->client_state.message_len, state->client_state.message);
+					state->status = IDLE;
+				}
+			} else {
+				// Drop packet
+				mbedtls_printf("Dropping packet from %u", src_id);
 			}
-		}
-	}
-	if (session == NULL) {
-		// There are too many simultaneous DTLS connections. Drop the packet.
-		mbedtls_printf("Too many simultaneous DTLS connections.");
-		return;
-	}
-	if (session->data_available) {
-		// Should never happen
-		mbedtls_printf("data_available already set.");
-		dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
-	}
-	// Give the session the data that we received
-	dtls_server_session_feed(session, data, data_len);
-	dtls_server_session_run(session);
-	if (session->status == DONE) {
-		mbedtls_printf("Received message from client %u: %.*s", (unsigned int) session->client_scewl_id, session->message_len, session->message);
-		// TODO do something with the message
-		session->valid = false;
+			return;
+		case IDLE:
+			// Assume the packet is a new incoming session
+			state->server_state.client_scewl_id = src_id;
+			dtls_server_startup(state, &state->server_state);
+			state->status = RECEIVING_MESSAGE;
+			// Fall through
+		case RECEIVING_MESSAGE:
+			// DTLS server packet handling
+			if (state->server_state.client_scewl_id == src_id) {
+				if (state->server_state.data_available) {
+					// Should never happen
+					mbedtls_printf("data_available already set.");
+					dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+					return;
+				}
+				// Give the session the data that we received
+				dtls_server_feed(&state->server_state, data, data_len);
+				dtls_server_run(&state->server_state);
+				if (state->server_state.status == DONE) {
+					mbedtls_printf("Received message from client %u: %.*s", (unsigned int) state->server_state.client_scewl_id, state->server_state.message_len, state->server_state.message);
+					// Hand off the received message to the CPU
+					handle_scewl_recv(state->server_state.message, state->server_state.client_scewl_id, state->server_state.message_len);
+					state->status = IDLE;
+				}
+			} else {
+				// Drop packet
+				mbedtls_printf("Dropping packet from %u", src_id);
+			}
+			return;
 	}
 }
 
@@ -622,16 +596,13 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
  * This function must be called often.
  */
 void dtls_check_timers(struct dtls_state *state) {
-	if (state->client_state.active) {
+	if (state->status == SENDING_MESSAGE) {
 		if (timers_get_delay(&state->client_state.timers) == 2) {
 				dtls_client_run(&state->client_state);
 			}
-	}
-	for (int i = 0; i < DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS; i++) {
-		if (state->server_state.sessions[i].valid) {
-			if (timers_get_delay(&state->server_state.sessions[i].timers) == 2) {
-				dtls_server_session_run(&state->server_state.sessions[i]);
-			}
+	} else if (state->status == RECEIVING_MESSAGE) {
+		if (timers_get_delay(&state->server_state.timers) == 2) {
+			dtls_server_run(&state->server_state);
 		}
 	}
 }

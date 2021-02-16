@@ -17,11 +17,12 @@
 #include "mbedtls/ssl_cache.h"
 #endif
 
-/*
- * We can have multiple incoming (server) DTLS connections at a time.
- * We can have only one outgoing (client) DTLS connection at a time.
- */
-#define DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS 1
+enum dtls_status {
+	IDLE,
+	SENDING_MESSAGE,
+	RECEIVING_MESSAGE,
+	FATAL_ERROR
+};
 
 enum dtls_session_status {
 	HANDSHAKE,
@@ -36,8 +37,7 @@ struct timers {
 	uint32_t fin_ms;
 };
 
-struct dtls_server_session_state {
-	bool valid;
+struct dtls_server_state {
 	scewl_id_t client_scewl_id;
 	enum dtls_session_status status;
 	struct timers timers;
@@ -52,14 +52,8 @@ struct dtls_server_session_state {
 	size_t message_len;
 
 	// mbedtls state
-	mbedtls_ssl_context ssl;
-};
-
-struct dtls_server_state {
-	struct dtls_server_session_state sessions[DTLS_SERVER_MAX_SIMULTANEOUS_CONNECTIONS];
-
-	// mbedtls state
 	mbedtls_ssl_config conf;
+	mbedtls_ssl_context ssl;
 	mbedtls_ssl_cookie_ctx cookie_ctx;
 #if defined(MBEDTLS_SSL_CACHE_C)
 	mbedtls_ssl_cache_context cache;
@@ -67,7 +61,6 @@ struct dtls_server_state {
 };
 
 struct dtls_client_state {
-	bool active;
 	scewl_id_t server_scewl_id;
 	enum dtls_session_status status;
 	struct timers timers;
@@ -87,7 +80,7 @@ struct dtls_client_state {
 };
 
 struct dtls_state {
-	bool fatal_error;
+	enum dtls_status status;
 	struct dtls_server_state server_state;
 	struct dtls_client_state client_state;
 
