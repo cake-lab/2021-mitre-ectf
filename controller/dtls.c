@@ -5,8 +5,9 @@
 
 #include MBEDTLS_CONFIG_FILE
 #include "mbedtls/platform.h"
-
 #include "controller.h"
+#include "sed_rand.h"
+#include "sed_secrets.h"
 #include "dtls.h"
 
 #define DEBUG_LEVEL 1
@@ -78,7 +79,7 @@ void dtls_teardown(struct dtls_state *state) {
 	mbedtls_x509_crt_free(&state->ca);
 	mbedtls_x509_crt_free(&state->cert);
 	mbedtls_pk_free(&state->pkey);
-	mbedtls_ctr_drbg_free(&state->ctr_drbg);
+	mbedtls_hmac_drbg_free(&state->hmac_drbg);
 	mbedtls_entropy_free(&state->entropy);
 }
 
@@ -126,7 +127,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 		return;
 	}
 
-	mbedtls_ssl_conf_rng(&server_state->conf, mbedtls_ctr_drbg_random, &dtls_state->ctr_drbg);
+	mbedtls_ssl_conf_rng(&server_state->conf, mbedtls_hmac_drbg_random, &dtls_state->hmac_drbg);
 	mbedtls_ssl_conf_dbg(&server_state->conf, my_debug, NULL);
 	mbedtls_ssl_conf_read_timeout(&server_state->conf, READ_TIMEOUT_MS);
 
@@ -143,7 +144,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	}
 
 #ifdef MBEDTLS_SSL_DTLS_HELLO_VERIFY
-	ret = mbedtls_ssl_cookie_setup(&server_state->cookie_ctx, mbedtls_ctr_drbg_random, &dtls_state->ctr_drbg);
+	ret = mbedtls_ssl_cookie_setup(&server_state->cookie_ctx, mbedtls_hmac_drbg_random, &dtls_state->hmac_drbg);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_cookie_setup returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
@@ -187,7 +188,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 		return;
 	}
 
-	mbedtls_ssl_conf_rng(&client_state->conf, mbedtls_ctr_drbg_random, &dtls_state->ctr_drbg);
+	mbedtls_ssl_conf_rng(&client_state->conf, mbedtls_hmac_drbg_random, &dtls_state->hmac_drbg);
 	mbedtls_ssl_conf_dbg(&client_state->conf, my_debug, NULL);
 	mbedtls_ssl_conf_read_timeout(&client_state->conf, READ_TIMEOUT_MS);
 
@@ -222,19 +223,19 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 void dtls_setup(struct dtls_state *state, char *message_buf) {
 	int ret, len;
 	uint32_t flags;
-	char scewl_id_str[6];
+	char scewl_id_str[16];
 	int scewl_id_str_len;
 
 	state->status = IDLE;
 	state->server_state.message = message_buf;
 
-	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
+	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 16, "%u_PROVISION", (unsigned int) SCEWL_ID);
 
 	mbedtls_x509_crt_init(&state->ca);
 	mbedtls_x509_crt_init(&state->cert);
 	mbedtls_pk_init(&state->pkey);
 	mbedtls_entropy_init(&state->entropy);
-	mbedtls_ctr_drbg_init(&state->ctr_drbg);
+	mbedtls_hmac_drbg_init(&state->hmac_drbg);
 
 	/*
 	 * Load the certificates and private RSA key
@@ -246,21 +247,21 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 	 * Instead, you may want to use mbedtls_x509_crt_parse_file() to read the
 	 * server and CA certificates, as well as mbedtls_pk_parse_keyfile().
 	 */
-	ret = mbedtls_x509_crt_parse(&state->ca, (const unsigned char *) mbedtls_test_srv_crt, mbedtls_test_srv_crt_len);
+	ret = mbedtls_x509_crt_parse(&state->ca, (const unsigned char *) provision_ca, strlen(provision_ca)+1);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
 		return;
 	}
 
-	ret = mbedtls_x509_crt_parse(&state->cert, (const unsigned char *) mbedtls_test_srv_crt, mbedtls_test_srv_crt_len);
+	ret = mbedtls_x509_crt_parse(&state->cert, (const unsigned char *) sed_provision_crt, strlen(sed_provision_crt)+1);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
 		return;
 	}
 
-	ret = mbedtls_pk_parse_key(&state->pkey, (const unsigned char *) mbedtls_test_srv_key, mbedtls_test_srv_key_len, NULL, 0);
+	ret = mbedtls_pk_parse_key(&state->pkey, (const unsigned char *) sed_provision_key, strlen(sed_provision_key)+1, NULL, 0);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_pk_parse_key returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
@@ -276,14 +277,26 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 
 	mbedtls_printf("ok");
 
-	/*
-	 * Seed the RNG
-	 */
-	mbedtls_printf("Seeding the random number generator...");
 
-	ret = mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->entropy, (unsigned char *) scewl_id_str, scewl_id_str_len);
+	/*
+	 * Setup random number generator and entropy sources
+	 *
+	 * NIST SP 800-90B says upto 2^48 random numbers can be generated before a reseed
+	 *
+	 * Set up 32-byte entropy length for 256-bit security level in HMAC DRBG (SHA-256)
+	 *
+	 * The seed function simply returns the device seed acquired during registration
+	 *
+	 * During seeding neither the personalization string or nonce is required,
+	 * especially since our seed has full entropy
+	 */
+	mbedtls_printf("Configuring random number generator ...");
+
+	mbedtls_hmac_drbg_set_reseed_interval(&state->hmac_drbg, (1ULL << 48));
+
+	ret = mbedtls_hmac_drbg_seed(&state->hmac_drbg, mbedtls_md_info_from_string("SHA256"), sed_seed_request, &state->entropy, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if(ret != 0) {
-		mbedtls_printf("failed! mbedtls_ctr_drbg_seed returned -%#06x", (unsigned int) -ret);
+		mbedtls_printf("failed! mbedtls_hmac_drbg_seed returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
 		return;
 	}

@@ -4,8 +4,9 @@
 
 #include <stdbool.h>
 
+#include "mbedtls/md.h"
 #include "mbedtls/entropy.h"
-#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/hmac_drbg.h"
 #include "mbedtls/certs.h"
 #include "mbedtls/x509.h"
 #include "mbedtls/ssl.h"
@@ -86,7 +87,7 @@ struct dtls_state {
 
 	// mbedtls state
 	mbedtls_entropy_context entropy;
-	mbedtls_ctr_drbg_context ctr_drbg;
+	mbedtls_hmac_drbg_context hmac_drbg;
 	mbedtls_x509_crt ca;
 	mbedtls_x509_crt cert;
 	mbedtls_pk_context pkey;

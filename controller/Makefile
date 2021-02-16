@@ -36,8 +36,13 @@ all: ${COMPILER}
 # the file that defines `main`, add the next two lines 
 LDFLAGS+=${COMPILER}/interface.o
 all: ${COMPILER}/interface.o
+LDFLAGS+=${COMPILER}/sed_secrets.o
+all: ${COMPILER}/sed_secrets.o
+LDFLAGS+=${COMPILER}/sed_rand.o
+all: ${COMPILER}/sed_rand.o
 LDFLAGS+=${COMPILER}/dtls.o
 all: ${COMPILER}/dtls.o
+
 
 ################ start crypto example ################
 # example AES rules to build in tiny-AES-c: https://github.com/kokke/tiny-AES-c
@@ -66,6 +71,11 @@ endif
 ################ end crypto example ################
 
 ################ start mbedtls ################
+# Custom HMAC DRBG implementation
+MBEDTLS_CUSTOM_PATH=./mbedtls_custom
+VPATH+=${MBEDTLS_CUSTOM_PATH}/library
+IPATH+=${MBEDTLS_CUSTOM_PATH}/include
+# Standard mbedtls library
 MBEDTLS_PATH=./mbedtls
 VPATH+=${MBEDTLS_PATH}/library
 IPATH+=${MBEDTLS_PATH}/include
@@ -78,11 +88,11 @@ LDFLAGS+=${COMPILER}/bignum.o
 LDFLAGS+=${COMPILER}/certs.o
 LDFLAGS+=${COMPILER}/cipher.o
 LDFLAGS+=${COMPILER}/cipher_wrap.o
-LDFLAGS+=${COMPILER}/ctr_drbg.o
 LDFLAGS+=${COMPILER}/debug.o
 LDFLAGS+=${COMPILER}/des.o
 LDFLAGS+=${COMPILER}/entropy.o
 LDFLAGS+=${COMPILER}/error.o
+LDFLAGS+=${COMPILER}/hmac_drbg.o
 LDFLAGS+=${COMPILER}/md.o
 LDFLAGS+=${COMPILER}/md5.o
 LDFLAGS+=${COMPILER}/memory_buffer_alloc.o
@@ -120,6 +130,7 @@ all: ${COMPILER}/debug.o
 all: ${COMPILER}/des.o
 all: ${COMPILER}/entropy.o
 all: ${COMPILER}/error.o
+all: ${COMPILER}/hmac_drbg.o
 all: ${COMPILER}/md.o
 all: ${COMPILER}/md5.o
 all: ${COMPILER}/memory_buffer_alloc.o
