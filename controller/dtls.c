@@ -134,7 +134,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	mbedtls_ssl_conf_session_cache(&server_state->conf, &server_state->cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
 #endif
 
-	mbedtls_ssl_conf_ca_chain(&server_state->conf, dtls_state->cert.next, NULL); // TODO
+	mbedtls_ssl_conf_ca_chain(&server_state->conf, &dtls_state->ca, NULL); // TODO use CRL?
 	ret = mbedtls_ssl_conf_own_cert(&server_state->conf, &dtls_state->cert, &dtls_state->pkey);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned -%#06x", (unsigned int) -ret);
@@ -191,7 +191,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 	mbedtls_ssl_conf_dbg(&client_state->conf, my_debug, NULL);
 	mbedtls_ssl_conf_read_timeout(&client_state->conf, READ_TIMEOUT_MS);
 
-	mbedtls_ssl_conf_ca_chain(&client_state->conf, dtls_state->cert.next, NULL); // TODO
+	mbedtls_ssl_conf_ca_chain(&client_state->conf, &dtls_state->ca, NULL); // TODO use CRL?
 	ret = mbedtls_ssl_conf_own_cert(&client_state->conf, &dtls_state->cert, &dtls_state->pkey);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned -%#06x", (unsigned int) -ret);
@@ -221,10 +221,14 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
  */
 void dtls_setup(struct dtls_state *state, char *message_buf) {
 	int ret, len;
-	char pers[6];
+	uint32_t flags;
+	char scewl_id_str[6];
+	int scewl_id_str_len;
 
 	state->status = IDLE;
 	state->server_state.message = message_buf;
+
+	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
 
 	mbedtls_x509_crt_init(&state->ca);
 	mbedtls_x509_crt_init(&state->cert);
@@ -263,6 +267,13 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 		return;
 	}
 
+	ret = mbedtls_x509_crt_verify(&state->cert, &state->ca, NULL, scewl_id_str, &flags, NULL, NULL);
+	if (ret != 0) {
+		mbedtls_printf("failed! mbedtls_x509_crt_verify returned -%#06x with flags %#10x", (unsigned int) -ret, flags);
+		dtls_fatal_error(state, ret);
+		return;
+	}
+
 	mbedtls_printf("ok");
 
 	/*
@@ -270,8 +281,7 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 	 */
 	mbedtls_printf("Seeding the random number generator...");
 
-	len = mbedtls_snprintf(pers, 6, "%u", (unsigned int) SCEWL_ID);
-	ret = mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->entropy, (unsigned char *) pers, len);
+	ret = mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->entropy, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if(ret != 0) {
 		mbedtls_printf("failed! mbedtls_ctr_drbg_seed returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
@@ -434,6 +444,11 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
 		} else if (ret == 0) {
 			mbedtls_printf("handshake complete");
 			server_state->status = READ;
+		} else if (ret == MBEDTLS_ERR_SSL_BAD_HS_CLIENT_HELLO) {
+			// The packet was probably not a hello packet at all.
+			// It was probably from a session that we already considered closed.
+			// Simply ignore it.
+			server_state->status = DONE;
 		} else if (ret != MBEDTLS_ERR_SSL_WANT_READ) {
 			mbedtls_printf("failed! mbedtls_ssl_handshake returned -%#06x", (unsigned int) -ret);
 			dtls_print_error(ret);
@@ -489,7 +504,8 @@ static void dtls_client_run(struct dtls_client_state *state) {
 			dtls_print_error(ret);
 			state->status = DONE;
 		}
-	} else if (state->status == WRITE) {
+	}
+	if (state->status == WRITE) {
 		pos = 0;
 		do {
 			ret = mbedtls_ssl_write(&state->ssl, (unsigned char *) &state->message[pos], state->message_len - pos);
@@ -507,7 +523,6 @@ static void dtls_client_run(struct dtls_client_state *state) {
 			state->status = DONE;
 		}
 	}
-
 	if (state->status == DONE) {
 		mbedtls_printf("Closing the connection...");
 		// No error checking, the connection might be closed already
