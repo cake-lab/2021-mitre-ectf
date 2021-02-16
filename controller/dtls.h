@@ -48,7 +48,7 @@ struct dtls_server_state {
 	size_t data_len;
 
 	// decrypted message
-	char message[SCEWL_MAX_DATA_SZ];
+	char *message;
 	size_t message_len;
 
 	// mbedtls state
@@ -93,7 +93,7 @@ struct dtls_state {
 };
 
 void dtls_teardown(struct dtls_state *state);
-void dtls_setup(struct dtls_state *state);
+void dtls_setup(struct dtls_state *state, char *message_buf);
 void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *message, size_t message_len);
 void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data, size_t data_len);
 void dtls_check_timers(struct dtls_state *state);

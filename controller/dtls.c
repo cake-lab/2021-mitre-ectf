@@ -9,8 +9,9 @@
 #include "controller.h"
 #include "dtls.h"
 
-#define DEBUG_LEVEL 2
+#define DEBUG_LEVEL 1
 #define READ_TIMEOUT_MS 1000   /* 1 second */
+#define SCEWL_MTU 1000
 
 /*
  * Callback for printing debug log lines.
@@ -157,7 +158,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	}
 
 	mbedtls_ssl_set_timer_cb(&server_state->ssl, &server_state->timers, timers_set_delay, timers_get_delay);
-	mbedtls_ssl_set_mtu(&server_state->ssl, SCEWL_MAX_DATA_SZ);
+	mbedtls_ssl_set_mtu(&server_state->ssl, SCEWL_MTU);
 
 	mbedtls_printf("ok");
 }
@@ -203,7 +204,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 	}
 
 	mbedtls_ssl_set_timer_cb(&client_state->ssl, &client_state->timers, timers_set_delay, timers_get_delay);
-	mbedtls_ssl_set_mtu(&client_state->ssl, SCEWL_MAX_DATA_SZ);
+	mbedtls_ssl_set_mtu(&client_state->ssl, SCEWL_MTU);
 
 	mbedtls_printf("ok");
 }
@@ -212,11 +213,12 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
  * Initialize things that are common to the DTLS server and client.
  * This is called once.
  */
-void dtls_setup(struct dtls_state *state) {
+void dtls_setup(struct dtls_state *state, char *message_buf) {
 	int ret, len;
 	char pers[6];
 
 	state->status = IDLE;
+	state->server_state.message = message_buf;
 
 	mbedtls_x509_crt_init(&state->ca);
 	mbedtls_x509_crt_init(&state->cert);
@@ -285,7 +287,7 @@ void dtls_setup(struct dtls_state *state) {
  * Send data to the client of an active session.
  */
 static int dtls_server_ssl_send(void *ctx, const unsigned char *buf, size_t len) {
-	if (len > SCEWL_MAX_DATA_SZ) {
+	if (len > SCEWL_MTU) {
 		return -1;
 	}
 	struct dtls_server_state *state = (struct dtls_server_state *) ctx;
@@ -315,7 +317,7 @@ static int dtls_server_ssl_recv(void *ctx, unsigned char *buf, size_t len) {
  * Send data to the server of an active session.
  */
 static int dtls_client_ssl_send(void *ctx, const unsigned char *buf, size_t len) {
-	if (len > SCEWL_MAX_DATA_SZ) {
+	if (len > SCEWL_MTU) {
 		return -1;
 	}
 	struct dtls_client_state *session_state = (struct dtls_client_state *) ctx;

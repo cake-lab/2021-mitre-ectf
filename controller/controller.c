@@ -265,65 +265,16 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
   memset(buf, 0, len);
 }
 
-static void main_loop(struct dtls_state *dtls_state) {
-  int registered = 0, len;
-  scewl_hdr_t hdr;
-  uint16_t src_id, tgt_id;
-  // message buffer
-  char buf[SCEWL_MAX_DATA_SZ];
-
-  // serve forever
-  while (1) {
-    // register with SSS
-    read_msg(CPU_INTF, buf, &hdr.src_id, &hdr.tgt_id, sizeof(buf), 1);
-
-    if (hdr.tgt_id == SCEWL_SSS_ID) {
-      registered = handle_registration(buf);
-    }
-
-    // server while registered
-    while (registered) {
-      memset(&hdr, 0, sizeof(hdr));
-
-      // handle outgoing message from CPU
-      if (intf_avail(CPU_INTF)) {
-        // Read message from CPU
-        len = read_msg(CPU_INTF, buf, &src_id, &tgt_id, sizeof(buf), 1);
-
-        if (tgt_id == SCEWL_BRDCST_ID) {
-          handle_brdcst_send(buf, len);
-        } else if (tgt_id == SCEWL_SSS_ID) {
-          registered = handle_registration(buf);
-        } else if (tgt_id == SCEWL_FAA_ID) {
-          handle_faa_send(buf, len);
-        } else {
-          dtls_send_message(dtls_state, tgt_id, buf, len);
-        }
-
-        continue;
-      }
-
-      // handle incoming radio message
-      if (intf_avail(RAD_INTF)) {
-        // Read message from antenna
-        len = read_msg(RAD_INTF, buf, &src_id, &tgt_id, sizeof(buf), 1);
-
-        if (tgt_id == SCEWL_BRDCST_ID) {
-          handle_brdcst_recv(buf, src_id, len);
-        } else if (src_id == SCEWL_FAA_ID) {
-          handle_faa_recv(buf, len);
-        } else {
-          dtls_handle_packet(dtls_state, src_id, buf, len);
-        }
-      }
-    }
-  }
-}
-
 int main() {
   struct dtls_state dtls_state;
   // heap memory for mbedtls
-  unsigned char memory_buf[16000];
+  unsigned char memory_buf[30000];
+  int registered = 0, len;
+  scewl_hdr_t hdr;
+  uint16_t src_id, tgt_id;
+  // buffers for CPU and SCEWL packets
+  char cpu_buf[SCEWL_MAX_DATA_SZ];
+  char scewl_buf[1000];
 
   // initialize interfaces
   intf_init(CPU_INTF);
@@ -341,9 +292,8 @@ int main() {
   mbedtls_debug_set_threshold(DEBUG_LEVEL);
 #endif
   mbedtls_printf("Hello, world! This is from main.");
-  dtls_setup(&dtls_state);
+  dtls_setup(&dtls_state, cpu_buf);
 
-  
 #ifdef EXAMPLE_AES
   // example encryption using tiny-AES-c
   struct AES_ctx ctx;
@@ -365,5 +315,50 @@ int main() {
   // end example
 #endif
 
-  main_loop(&dtls_state);
+  // serve forever
+  while (1) {
+    // register with SSS
+    read_msg(CPU_INTF, cpu_buf, &hdr.src_id, &hdr.tgt_id, sizeof(cpu_buf), 1);
+
+    if (hdr.tgt_id == SCEWL_SSS_ID) {
+      registered = handle_registration(cpu_buf);
+    }
+
+    // server while registered
+    while (registered) {
+      memset(&hdr, 0, sizeof(hdr));
+
+      // handle outgoing message from CPU
+      if (dtls_state.status == IDLE && intf_avail(CPU_INTF)) {
+        // Read message from CPU
+        len = read_msg(CPU_INTF, cpu_buf, &src_id, &tgt_id, sizeof(cpu_buf), 1);
+
+        if (tgt_id == SCEWL_BRDCST_ID) {
+          handle_brdcst_send(cpu_buf, len);
+        } else if (tgt_id == SCEWL_SSS_ID) {
+          registered = handle_registration(cpu_buf);
+        } else if (tgt_id == SCEWL_FAA_ID) {
+          handle_faa_send(cpu_buf, len);
+        } else {
+          dtls_send_message(&dtls_state, tgt_id, cpu_buf, len);
+        }
+
+        continue;
+      }
+
+      // handle incoming radio message
+      if (intf_avail(RAD_INTF)) {
+        // Read message from antenna
+        len = read_msg(RAD_INTF, scewl_buf, &src_id, &tgt_id, sizeof(scewl_buf), 1);
+
+        if (tgt_id == SCEWL_BRDCST_ID) {
+          handle_brdcst_recv(scewl_buf, src_id, len);
+        } else if (src_id == SCEWL_FAA_ID) {
+          handle_faa_recv(scewl_buf, len);
+        } else {
+          dtls_handle_packet(&dtls_state, src_id, scewl_buf, len);
+        }
+      }
+    }
+  }
 }
