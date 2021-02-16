@@ -80,7 +80,6 @@ void dtls_teardown(struct dtls_state *state) {
 	mbedtls_x509_crt_free(&state->cert);
 	mbedtls_pk_free(&state->pkey);
 	mbedtls_hmac_drbg_free(&state->hmac_drbg);
-	mbedtls_entropy_free(&state->entropy);
 }
 
 /*
@@ -234,7 +233,6 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 	mbedtls_x509_crt_init(&state->ca);
 	mbedtls_x509_crt_init(&state->cert);
 	mbedtls_pk_init(&state->pkey);
-	mbedtls_entropy_init(&state->entropy);
 	mbedtls_hmac_drbg_init(&state->hmac_drbg);
 
 	/*
@@ -279,7 +277,7 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 
 
 	/*
-	 * Setup random number generator and entropy sources
+	 * Setup random number generator and entropy source
 	 *
 	 * NIST SP 800-90B says upto 2^48 random numbers can be generated before a reseed
 	 *
@@ -294,7 +292,7 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 
 	mbedtls_hmac_drbg_set_reseed_interval(&state->hmac_drbg, (1ULL << 48));
 
-	ret = mbedtls_hmac_drbg_seed(&state->hmac_drbg, mbedtls_md_info_from_string("SHA256"), sed_seed_request, &state->entropy, (unsigned char *) scewl_id_str, scewl_id_str_len);
+	ret = mbedtls_hmac_drbg_seed(&state->hmac_drbg, mbedtls_md_info_from_string("SHA256"), sed_seed_request, NULL, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if(ret != 0) {
 		mbedtls_printf("failed! mbedtls_hmac_drbg_seed returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);

@@ -90,7 +90,6 @@ LDFLAGS+=${COMPILER}/cipher.o
 LDFLAGS+=${COMPILER}/cipher_wrap.o
 LDFLAGS+=${COMPILER}/debug.o
 LDFLAGS+=${COMPILER}/des.o
-LDFLAGS+=${COMPILER}/entropy.o
 LDFLAGS+=${COMPILER}/error.o
 LDFLAGS+=${COMPILER}/hmac_drbg.o
 LDFLAGS+=${COMPILER}/md.o
@@ -128,7 +127,6 @@ all: ${COMPILER}/cipher_wrap.o
 all: ${COMPILER}/ctr_drbg.o
 all: ${COMPILER}/debug.o
 all: ${COMPILER}/des.o
-all: ${COMPILER}/entropy.o
 all: ${COMPILER}/error.o
 all: ${COMPILER}/hmac_drbg.o
 all: ${COMPILER}/md.o
