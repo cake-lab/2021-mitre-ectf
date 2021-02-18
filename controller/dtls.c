@@ -452,6 +452,7 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
 		if (ret == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
 			mbedtls_printf("hello verification requested");
 			server_state->status = DONE;
+			return;
 		} else if (ret == 0) {
 			mbedtls_printf("handshake complete");
 			server_state->status = READ;
