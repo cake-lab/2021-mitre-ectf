@@ -460,6 +460,7 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
 			// It was probably from a session that we already considered closed.
 			// Simply ignore it.
 			server_state->status = DONE;
+			return;
 		} else if (ret != MBEDTLS_ERR_SSL_WANT_READ) {
 			mbedtls_printf("failed! mbedtls_ssl_handshake returned -%#06x", (unsigned int) -ret);
 			dtls_print_error(ret);
@@ -495,6 +496,11 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
 		// No error checking, the connection might be closed already
 		mbedtls_ssl_close_notify(&server_state->ssl);
 		mbedtls_printf("done");
+		if (server_state->message_len > 0) {
+			mbedtls_printf("Received message from client %u: %.*s", (unsigned int) server_state->client_scewl_id, server_state->message_len, server_state->message);
+			// Hand off the received message to the CPU
+			handle_scewl_recv(server_state->message, server_state->client_scewl_id, server_state->message_len);
+		}
 	}
 }
 
@@ -539,6 +545,7 @@ static void dtls_client_run(struct dtls_client_state *state) {
 		// No error checking, the connection might be closed already
 		mbedtls_ssl_close_notify(&state->ssl);
 		mbedtls_printf("done");
+		mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->server_scewl_id, state->message_len, state->message);
 	}
 }
 
@@ -588,7 +595,6 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
 				dtls_client_feed(&state->client_state, data, data_len);
 				dtls_client_run(&state->client_state);
 				if (state->client_state.status == DONE) {
-					mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->client_state.server_scewl_id, state->client_state.message_len, state->client_state.message);
 					state->status = IDLE;
 				}
 			} else {
@@ -615,11 +621,6 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
 				dtls_server_feed(&state->server_state, data, data_len);
 				dtls_server_run(&state->server_state);
 				if (state->server_state.status == DONE) {
-					if (state->server_state.message_len > 0) {
-						mbedtls_printf("Received message from client %u: %.*s", (unsigned int) state->server_state.client_scewl_id, state->server_state.message_len, state->server_state.message);
-						// Hand off the received message to the CPU
-						handle_scewl_recv(state->server_state.message, state->server_state.client_scewl_id, state->server_state.message_len);
-					}
 					state->status = IDLE;
 				}
 			} else {
@@ -637,10 +638,16 @@ void dtls_check_timers(struct dtls_state *state) {
 	if (state->status == SENDING_MESSAGE) {
 		if (timers_get_delay(&state->client_state.timers) == 2) {
 				dtls_client_run(&state->client_state);
+				if (state->client_state.status == DONE) {
+					state->status = IDLE;
+				}
 			}
 	} else if (state->status == RECEIVING_MESSAGE) {
 		if (timers_get_delay(&state->server_state.timers) == 2) {
 			dtls_server_run(&state->server_state);
+			if (state->server_state.status == DONE) {
+				state->status = IDLE;
+			}
 		}
 	}
 }

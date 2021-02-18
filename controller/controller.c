@@ -317,12 +317,14 @@ int main() {
 
   // serve forever
   while (1) {
+    mbedtls_printf("Registering with the SSS...");
     // register with SSS
     read_msg(CPU_INTF, cpu_buf, &hdr.src_id, &hdr.tgt_id, sizeof(cpu_buf), 1);
 
     if (hdr.tgt_id == SCEWL_SSS_ID) {
       registered = handle_registration(cpu_buf);
     }
+    mbedtls_printf("ok");
 
     // server while registered
     while (registered) {
@@ -332,6 +334,7 @@ int main() {
       if (dtls_state.status == IDLE && intf_avail(CPU_INTF)) {
         // Read message from CPU
         len = read_msg(CPU_INTF, cpu_buf, &src_id, &tgt_id, sizeof(cpu_buf), 1);
+        mbedtls_printf("Got message to send from CPU.");
 
         if (tgt_id == SCEWL_BRDCST_ID) {
           handle_brdcst_send(cpu_buf, len);
