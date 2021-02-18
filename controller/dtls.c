@@ -615,9 +615,11 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
 				dtls_server_feed(&state->server_state, data, data_len);
 				dtls_server_run(&state->server_state);
 				if (state->server_state.status == DONE) {
-					mbedtls_printf("Received message from client %u: %.*s", (unsigned int) state->server_state.client_scewl_id, state->server_state.message_len, state->server_state.message);
-					// Hand off the received message to the CPU
-					handle_scewl_recv(state->server_state.message, state->server_state.client_scewl_id, state->server_state.message_len);
+					if (state->server_state.message_len > 0) {
+						mbedtls_printf("Received message from client %u: %.*s", (unsigned int) state->server_state.client_scewl_id, state->server_state.message_len, state->server_state.message);
+						// Hand off the received message to the CPU
+						handle_scewl_recv(state->server_state.message, state->server_state.client_scewl_id, state->server_state.message_len);
+					}
 					state->status = IDLE;
 				}
 			} else {
