@@ -10,7 +10,9 @@
 #include "sed_secrets.h"
 #include "dtls.h"
 
+#ifndef DEBUG_LEVEL
 #define DEBUG_LEVEL 1
+#endif
 #define READ_TIMEOUT_MS 1000   /* 1 second */
 #define SCEWL_MTU 1000
 

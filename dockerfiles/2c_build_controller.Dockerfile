@@ -37,6 +37,7 @@ ADD . /sed
 ###################################################################
 
 ARG SCEWL_ID
+ARG DEBUG_LEVEL
 
 # Copy SED provision secrets to image
 COPY --from=sss /secrets/${SCEWL_ID}/sed_secrets.h /sed/sed_secrets.h
@@ -45,7 +46,7 @@ COPY --from=sss /secrets/${SCEWL_ID}/sed_secrets.c /sed/sed_secrets.c
 
 # generate any other secrets and build controller
 WORKDIR /sed
-RUN make SCEWL_ID=${SCEWL_ID}
+RUN make SCEWL_ID=${SCEWL_ID} DEBUG_LEVEL=${DEBUG_LEVEL}
 RUN mv /sed/gcc/controller.bin /controller
 
 

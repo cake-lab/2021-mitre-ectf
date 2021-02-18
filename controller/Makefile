@@ -29,6 +29,10 @@ IPATH+=${VPATH}
 # add flags to pass to the compiler
 CFLAGS+=-DSCEWL_ID=${SCEWL_ID}
 
+ifdef DEBUG_LEVEL
+CFLAGS+=-DDEBUG_LEVEL=${DEBUG_LEVEL}
+endif
+
 # this rule must come first in `all`
 all: ${COMPILER}
 

@@ -35,7 +35,9 @@ char int2char(uint8_t i) {
 #define send_str(M) send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, strlen(M), M)
 #define BLOCK_SIZE 16
 #define MAX_PRINTF_LENGTH 1000
-#define DEBUG_LEVEL 0
+#ifndef DEBUG_LEVEL
+#define DEBUG_LEVEL 1
+#endif
 
 
 int read_msg(intf_t *intf, char *data, scewl_id_t *src_id, scewl_id_t *tgt_id,

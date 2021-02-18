@@ -1,0 +1,49 @@
+name: smoketests
+
+on: [push, pull_request]
+
+jobs:
+  echo:
+    name: Run example echo server and client
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2.3.4
+        with:
+          submodules: recursive
+      - name: Build and run
+        uses: uraimo/run-on-arch-action@v2.0.8
+        with:
+          arch: aarch64
+          distro: ubuntu20.04
+          githubToken: ${{ github.token }}
+          dockerRunArgs: |
+            --volume /var/run/docker.sock:/var/run/docker.sock
+          env: |
+            DEPLOYMENT: smoketests
+            SOCK_ROOT: ${{ github.workspace }}/socks
+            SSS_SOCK: sss.sock
+            FAA_SOCK: faa.sock
+            MITM_SOCK: mitm.sock
+            START_ID: 10
+            END_ID: 12
+            DEBUG_LEVEL: 2
+          install: |
+            apt-get update
+            apt-get -y install make docker.io
+          run: |
+            make create_deployment
+            make add_sed SED=echo_server SCEWL_ID=10 NAME=echo_server
+            make add_sed SED=echo_client SCEWL_ID=11 NAME=echo_client CUSTOM='TGT_ID=10'
+            make deploy
+            python3 tools/faa_read.py socks/faa.sock &
+            FAA_READER_PID=$!
+            make launch_sed_d NAME=echo_server SCEWL_ID=10
+            sleep 5
+            make launch_sed_d NAME=echo_client SCEWL_ID=11
+            wait $FAA_READER_PID
+      - name: Check for flag
+        run: |
+          cat faa.log
+          docker ps
+          grep -q 'ectf{boot_cafecoffee1a77e5}' faa.log
