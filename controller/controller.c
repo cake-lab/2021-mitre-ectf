@@ -331,22 +331,26 @@ int main() {
       memset(&hdr, 0, sizeof(hdr));
 
       // handle outgoing message from CPU
-      if (dtls_state.status == IDLE && intf_avail(CPU_INTF)) {
-        // Read message from CPU
-        len = read_msg(CPU_INTF, cpu_buf, &src_id, &tgt_id, sizeof(cpu_buf), 1);
-        mbedtls_printf("Got message to send from CPU.");
-
-        if (tgt_id == SCEWL_BRDCST_ID) {
-          handle_brdcst_send(cpu_buf, len);
-        } else if (tgt_id == SCEWL_SSS_ID) {
-          registered = handle_registration(cpu_buf);
-        } else if (tgt_id == SCEWL_FAA_ID) {
-          handle_faa_send(cpu_buf, len);
+      if (intf_avail(CPU_INTF)) {
+        if (dtls_state.status != IDLE) {
+           mbedtls_printf("There is a message waiting on the CPU bus.");
         } else {
-          dtls_send_message(&dtls_state, tgt_id, cpu_buf, len);
-        }
+          // Read message from CPU
+          len = read_msg(CPU_INTF, cpu_buf, &src_id, &tgt_id, sizeof(cpu_buf), 1);
+          mbedtls_printf("Received message from CPU.");
 
-        continue;
+          if (tgt_id == SCEWL_BRDCST_ID) {
+            handle_brdcst_send(cpu_buf, len);
+          } else if (tgt_id == SCEWL_SSS_ID) {
+            registered = handle_registration(cpu_buf);
+          } else if (tgt_id == SCEWL_FAA_ID) {
+            handle_faa_send(cpu_buf, len);
+          } else {
+            dtls_send_message(&dtls_state, tgt_id, cpu_buf, len);
+          }
+
+          continue;
+        }
       }
 
       // handle incoming radio message
