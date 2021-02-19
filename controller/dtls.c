@@ -220,7 +220,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
  * This is called once.
  */
 void dtls_setup(struct dtls_state *state, char *message_buf) {
-	int ret, len;
+	int ret;
 	uint32_t flags;
 	char scewl_id_str[16];
 	int scewl_id_str_len;
@@ -577,8 +577,6 @@ void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *messag
  * Handle a DTLS packet received over the SCEWL bus.
  */
 void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data, size_t data_len) {
-	int i;
-
 	switch (state->status) {
 		case FATAL_ERROR:
 			mbedtls_printf("The DTLS subsystem is in FATAL_ERROR state.");
