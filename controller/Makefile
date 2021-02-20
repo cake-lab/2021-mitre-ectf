@@ -42,8 +42,12 @@ LDFLAGS+=${COMPILER}/sed_secrets.o
 all: ${COMPILER}/sed_secrets.o
 LDFLAGS+=${COMPILER}/sed_rand.o
 all: ${COMPILER}/sed_rand.o
+LDFLAGS+=${COMPILER}/timers.o
+all: ${COMPILER}/timers.o
 LDFLAGS+=${COMPILER}/dtls.o
 all: ${COMPILER}/dtls.o
+
+
 
 
 ################ start crypto example ################

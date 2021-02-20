@@ -8,46 +8,23 @@
 #include "controller.h"
 #include "sed_rand.h"
 #include "sed_secrets.h"
+#include "timers.h"
 #include "dtls.h"
 
 #ifndef DEBUG_LEVEL
 #define DEBUG_LEVEL 1
 #endif
-#define READ_TIMEOUT_MS 1000   /* 1 second */
+
+#define HS_TIMEOUT_MS_MIN 7000
+#define HS_TIMEOUT_MS_MAX 60000
 #define SCEWL_MTU 1000
+
 
 /*
  * Callback for printing debug log lines.
  */
 static void my_debug(void *ctx, int level, const char *file, int line, const char *str) {
 	mbedtls_printf("[%d] %s:%04d: %s", level, file, line, str);
-}
-
-/*
- * Callback used by mbedtls to set a timer.
- */
-static void timers_set_delay(void *data, uint32_t int_ms, uint32_t fin_ms) {
-	struct timers *timers = (struct timers *) data;
-	// timers->start_time = clock();
-	timers->int_ms = int_ms;
-	timers->fin_ms = fin_ms;
-}
-
-/*
- * Callback used by mbedtls to check if a timer has expired.
- */
-static int timers_get_delay(void *data) {
-	struct timers *timers = (struct timers *) data;
-	// clock_t current_time = clock();
-	// uint32_t ms_elapsed = (current_time - timers->start_time) * 1000 / CLOCKS_PER_SEC;
-	if (timers->fin_ms == 0) {
-		return -1;
-	// } else if (ms_elapsed >= timers->fin_ms) {
-	// 	return 2;
-	// } else if (ms_elapsed >= timers->int_ms) {
-	// 	return 1;
-	}
-	return 0;
 }
 
 /*
@@ -130,7 +107,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 
 	mbedtls_ssl_conf_rng(&server_state->conf, mbedtls_hmac_drbg_random, &dtls_state->hmac_drbg);
 	mbedtls_ssl_conf_dbg(&server_state->conf, my_debug, NULL);
-	mbedtls_ssl_conf_read_timeout(&server_state->conf, READ_TIMEOUT_MS);
+	mbedtls_ssl_conf_handshake_timeout(&server_state->conf, HS_TIMEOUT_MS_MIN, HS_TIMEOUT_MS_MAX);
 
 #if defined(MBEDTLS_SSL_CACHE_C)
 	mbedtls_ssl_conf_session_cache(&server_state->conf, &server_state->cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
@@ -191,7 +168,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 
 	mbedtls_ssl_conf_rng(&client_state->conf, mbedtls_hmac_drbg_random, &dtls_state->hmac_drbg);
 	mbedtls_ssl_conf_dbg(&client_state->conf, my_debug, NULL);
-	mbedtls_ssl_conf_read_timeout(&client_state->conf, READ_TIMEOUT_MS);
+	mbedtls_ssl_conf_handshake_timeout(&client_state->conf, HS_TIMEOUT_MS_MIN, HS_TIMEOUT_MS_MAX);
 
 	mbedtls_ssl_conf_ca_chain(&client_state->conf, &dtls_state->ca, NULL); // TODO use CRL?
 	ret = mbedtls_ssl_conf_own_cert(&client_state->conf, &dtls_state->cert, &dtls_state->pkey);
@@ -586,12 +563,6 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
 		case SENDING_MESSAGE:
 			// DTLS client packet handling
 			if (state->client_state.server_scewl_id == src_id) {
-				if (state->client_state.data_available) {
-					// Should never happen
-					mbedtls_printf("data_available already set.");
-					dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
-					return;
-				}
 				// Give the session the data that we received
 				dtls_client_feed(&state->client_state, data, data_len);
 				dtls_client_run(&state->client_state);
@@ -612,12 +583,6 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
 		case RECEIVING_MESSAGE:
 			// DTLS server packet handling
 			if (state->server_state.client_scewl_id == src_id) {
-				if (state->server_state.data_available) {
-					// Should never happen
-					mbedtls_printf("data_available already set.");
-					dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
-					return;
-				}
 				// Give the session the data that we received
 				dtls_server_feed(&state->server_state, data, data_len);
 				dtls_server_run(&state->server_state);

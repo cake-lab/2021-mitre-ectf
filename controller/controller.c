@@ -15,6 +15,7 @@
 #include "mbedtls/memory_buffer_alloc.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
+#include "timers.h"
 #include "dtls.h"
 
 // Cannot include printf.h because it contains preprocessor defines that cause problems
@@ -283,6 +284,13 @@ int main() {
   intf_init(SSS_INTF);
   intf_init(RAD_INTF);
 
+  // Enable Timer interrupts
+  NVIC_EnableIRQ(Timer0A_IRQn);
+  NVIC_EnableIRQ(Timer1A_IRQn);
+
+  // Enable global interrupts
+  __enable_irq();
+
   // heap memory for mbedtls
   mbedtls_memory_buffer_alloc_init(memory_buf, sizeof(memory_buf));
   // replacements for stdlib functions for mbedtls
@@ -331,6 +339,12 @@ int main() {
     // server while registered
     while (registered) {
       memset(&hdr, 0, sizeof(hdr));
+
+      // Handle final timer expiration
+      if (fin_timer_event) {
+        fin_timer_event = 0;
+        dtls_check_timers(&dtls_state);
+      }
 
       // handle outgoing message from CPU
       if (intf_avail(CPU_INTF)) {
