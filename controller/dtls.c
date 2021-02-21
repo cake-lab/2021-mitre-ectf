@@ -11,10 +11,6 @@
 #include "timers.h"
 #include "dtls.h"
 
-#ifndef DEBUG_LEVEL
-#define DEBUG_LEVEL 1
-#endif
-
 #define HS_TIMEOUT_MS_MIN 7000
 #define HS_TIMEOUT_MS_MAX 60000
 #define SCEWL_MTU 1000
@@ -285,8 +281,6 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 		return;
 	}
 	dtls_client_setup(state, &state->client_state);
-
-	mbedtls_debug_set_threshold(DEBUG_LEVEL);
 }
 
 /*
