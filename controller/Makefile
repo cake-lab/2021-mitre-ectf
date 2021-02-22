@@ -76,11 +76,22 @@ all: ${COMPILER}/aes.o
 endif
 ################ end crypto example ################
 
+############# start masked-aes-c ##############
+MASKED_AES_PATH=./masked-aes-c
+VPATH+=${MASKED_AES_PATH}
+IPATH+=${MASKED_AES_PATH}
+
+LDFLAGS+=${COMPILER}/masked_aes.o
+
+all: ${COMPILER}/masked_aes.o
+############### end masked-aes-c ##############
+
 ################ start mbedtls ################
-# Custom HMAC DRBG implementation
+# Modified mbedtls library
 MBEDTLS_CUSTOM_PATH=./mbedtls_custom
 VPATH+=${MBEDTLS_CUSTOM_PATH}/library
 IPATH+=${MBEDTLS_CUSTOM_PATH}/include
+
 # Standard mbedtls library
 MBEDTLS_PATH=./mbedtls
 VPATH+=${MBEDTLS_PATH}/library

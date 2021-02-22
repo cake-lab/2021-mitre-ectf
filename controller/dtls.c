@@ -250,26 +250,11 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 
 	mbedtls_printf("ok");
 
-
 	/*
-	 * Setup random number generator and entropy source
-	 *
-	 * NIST SP 800-90B says upto 2^48 random numbers can be generated before a reseed
-	 *
-	 * Set up 32-byte entropy length for 256-bit security level in HMAC DRBG (SHA-256)
-	 *
-	 * The seed function simply returns the device seed acquired during registration
-	 *
-	 * During seeding neither the personalization string or nonce is required,
-	 * especially since our seed has full entropy
+	 * Set up RNG
 	 */
-	mbedtls_printf("Configuring random number generator ...");
-
-	mbedtls_hmac_drbg_set_reseed_interval(&state->hmac_drbg, (1ULL << 48));
-
-	ret = mbedtls_hmac_drbg_seed(&state->hmac_drbg, mbedtls_md_info_from_string("SHA256"), sed_seed_request, NULL, (unsigned char *) scewl_id_str, scewl_id_str_len);
+	ret = rng_module_setup(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if(ret != 0) {
-		mbedtls_printf("failed! mbedtls_hmac_drbg_seed returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(state, ret);
 		return;
 	}

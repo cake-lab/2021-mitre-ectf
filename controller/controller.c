@@ -15,6 +15,7 @@
 #include "mbedtls/memory_buffer_alloc.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
+#include "masked_aes.h"
 #include "timers.h"
 #include "dtls.h"
 
@@ -274,6 +275,9 @@ int main() {
   char cpu_buf[SCEWL_MAX_DATA_SZ];
   char scewl_buf[1000];
 
+  // RNG for masked AES
+  mbedtls_hmac_drbg_context aes_hmac_drbg;
+
   // initialize interfaces
   intf_init(CPU_INTF);
   intf_init(SSS_INTF);
@@ -297,6 +301,10 @@ int main() {
   mbedtls_debug_set_threshold(DEBUG_LEVEL);
 #endif
   mbedtls_printf("Hello, world! This is from main.");
+  if (Masked_AES_RNG_Setup(&aes_hmac_drbg) != 0) {
+    mbedtls_printf("Error setting up masked AES rng. Entering death loop.");
+    while (1);
+  }
   dtls_setup(&dtls_state, cpu_buf);
 
 #ifdef EXAMPLE_AES
