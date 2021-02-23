@@ -9,7 +9,7 @@ sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.connect(sys.argv[1])
 
 msgs = []
-while select.select([sock], [], [], 120)[0]:
+while select.select([sock], [], [], 30)[0]:
 	# receive and unpack packet header
 	hdr = b''
 	while len(hdr) < 8:

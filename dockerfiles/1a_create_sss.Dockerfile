@@ -8,9 +8,11 @@ FROM ubuntu:focal
 
 # Add environment customizations here
 # NOTE: do this first so Docker can used cached containers to skip reinstalling everything
-RUN apt-get update && apt-get upgrade -y && \
-    apt-get install -y python3 && \
-    apt-get install -y openssl
+
+ENV LIBRARY_PATH=/usr/lib/aarch64-linux-gnu
+
+RUN apt-get update && apt-get install -y python3 python3-pip git openssl libmbedtls-dev
+RUN pip3 install "git+https://github.com/rrlapointe/python-mbedtls.git@ectf"
 
 # add any deployment-wide secrets here
 RUN mkdir /secrets

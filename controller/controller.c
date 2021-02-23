@@ -41,6 +41,8 @@ char int2char(uint8_t i) {
 #define DEBUG_LEVEL 1
 #endif
 
+static bool registered;
+
 
 int read_msg(intf_t *intf, char *data, scewl_id_t *src_id, scewl_id_t *tgt_id,
              size_t n, int blocking) {
@@ -78,6 +80,10 @@ int read_msg(intf_t *intf, char *data, scewl_id_t *src_id, scewl_id_t *tgt_id,
   // unpack header
   *src_id = hdr.src_id;
   *tgt_id = hdr.tgt_id;
+
+  if (intf == SSS_INTF) {
+    mbedtls_printf("Packet has payload length %hu.", hdr.len);
+  }
 
   // read body
   max = hdr.len < n ? hdr.len : n;
@@ -117,13 +123,33 @@ int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, c
 }
 
 
-int handle_scewl_recv(const char* data, scewl_id_t src_id, uint16_t len) {
-  return send_msg(CPU_INTF, src_id, SCEWL_ID, len, data);
+int handle_sss_recv(const char* data, uint16_t len) {
+  scewl_sss_msg_t *msg;
+
+  if (len == sizeof(scewl_sss_msg_t)) {
+    msg = (scewl_sss_msg_t *) data;
+    switch (msg->op) {
+      case SCEWL_SSS_REG:
+        registered = true;
+        mbedtls_printf("Registered.");
+        break;
+      case SCEWL_SSS_DEREG:
+        registered = false;
+        mbedtls_printf("Deregistered.");
+        break;
+      default:
+        mbedtls_printf("Received response from SSS with invalid status.");
+    }
+    // forward message to CPU
+    send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, len, data);
+  } else {
+    mbedtls_printf("Received invalid response from SSS.");
+  }
 }
 
 
-int handle_scewl_send(const char* data, scewl_id_t tgt_id, uint16_t len) {
-  return send_msg(RAD_INTF, SCEWL_ID, tgt_id, len, data);
+int handle_scewl_recv(const char* data, scewl_id_t src_id, uint16_t len) {
+  return send_msg(CPU_INTF, src_id, SCEWL_ID, len, data);
 }
 
 
@@ -146,77 +172,6 @@ int handle_faa_send(const char* data, uint16_t len) {
   return send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, len, data);
 }
 
-
-int handle_registration(char* msg) {
-  scewl_sss_msg_t *sss_msg = (scewl_sss_msg_t *)msg;
-  if (sss_msg->op == SCEWL_SSS_REG) {
-    return sss_register();
-  }
-  else if (sss_msg->op == SCEWL_SSS_DEREG) {
-    return sss_deregister();
-  }
-
-  // bad op
-  return 0;
-}
-
-
-int sss_register() {
-  scewl_sss_msg_t msg;
-  scewl_id_t src_id, tgt_id;
-  int status, len;
-
-  // fill registration message
-  msg.dev_id = SCEWL_ID;
-  msg.op = SCEWL_SSS_REG;
-  
-  // send registration
-  status = send_msg(SSS_INTF, SCEWL_ID, SCEWL_SSS_ID, sizeof(msg), (char *)&msg);
-  if (status == SCEWL_ERR) {
-    return 0;
-  }
-
-  // receive response
-  len = read_msg(SSS_INTF, (char *)&msg, &src_id, &tgt_id, sizeof(scewl_sss_msg_t), 1);
-
-  // notify CPU of response
-  status = send_msg(CPU_INTF, src_id, tgt_id, len, (char *)&msg);
-  if (status == SCEWL_ERR) {
-    return 0;
-  }
-
-  // op should be REG on success
-  return msg.op == SCEWL_SSS_REG;
-}
-
-
-int sss_deregister() {
-  scewl_sss_msg_t msg;
-  scewl_id_t src_id, tgt_id;
-  int status, len;
-
-  // fill registration message
-  msg.dev_id = SCEWL_ID;
-  msg.op = SCEWL_SSS_DEREG;
-  
-  // send registration
-  status = send_msg(SSS_INTF, SCEWL_ID, SCEWL_SSS_ID, sizeof(msg), (char *)&msg);
-  if (status == SCEWL_ERR) {
-    return 0;
-  }
-
-  // receive response
-  len = read_msg(SSS_INTF, (char *)&msg, &src_id, &tgt_id, sizeof(scewl_sss_msg_t), 1);
-
-  // notify CPU of response
-  status = send_msg(CPU_INTF, src_id, tgt_id, len, (char *)&msg);
-  if (status == SCEWL_ERR) {
-    return 0;
-  }
-
-  // op should be DEREG on success
-  return msg.op == SCEWL_SSS_DEREG;
-}
 
 /*
  * Implementation of exit that works by causing a segmentation fault.
@@ -268,7 +223,7 @@ int main() {
   struct dtls_state dtls_state;
   // heap memory for mbedtls
   unsigned char memory_buf[30000];
-  int registered = 0, len;
+  int len;
   scewl_hdr_t hdr;
   uint16_t src_id, tgt_id;
   // buffers for CPU and SCEWL packets
@@ -330,65 +285,70 @@ int main() {
 
   // serve forever
   while (1) {
-    mbedtls_printf("Registering with the SSS...");
-    // register with SSS
-    read_msg(CPU_INTF, cpu_buf, &hdr.src_id, &hdr.tgt_id, sizeof(cpu_buf), 1);
+    memset(&hdr, 0, sizeof(hdr));
 
-    if (hdr.tgt_id == SCEWL_SSS_ID) {
-      registered = handle_registration(cpu_buf);
+    // Handle final timer expiration
+    if (fin_timer_event) {
+      fin_timer_event = 0;
+      dtls_check_timers(&dtls_state);
     }
-    mbedtls_printf("ok");
 
-    // server while registered
-    while (registered) {
-      memset(&hdr, 0, sizeof(hdr));
+    // handle outgoing message from CPU
+    if (intf_avail(CPU_INTF)) {
+      if (dtls_state.status != IDLE) {
+        mbedtls_printf("There is a message waiting on the CPU interface.");
+      } else {
+        // Read message from CPU
+        mbedtls_printf("Receiving message on CPU interface.");
+        len = read_msg(CPU_INTF, cpu_buf, &src_id, &tgt_id, sizeof(cpu_buf), 1);
+        mbedtls_printf("Received message from CPU.");
 
-      // Handle final timer expiration
-      if (fin_timer_event) {
-        fin_timer_event = 0;
-        dtls_check_timers(&dtls_state);
-      }
-
-      // handle outgoing message from CPU
-      if (intf_avail(CPU_INTF)) {
-        if (dtls_state.status != IDLE) {
-           mbedtls_printf("There is a message waiting on the CPU bus.");
+        if (tgt_id == SCEWL_BRDCST_ID) {
+          handle_brdcst_send(cpu_buf, len);
+        } else if (tgt_id == SCEWL_SSS_ID) {
+          dtls_send_message_to_sss(&dtls_state, cpu_buf, len);
+        } else if (tgt_id == SCEWL_FAA_ID) {
+          handle_faa_send(cpu_buf, len);
         } else {
-          // Read message from CPU
-          len = read_msg(CPU_INTF, cpu_buf, &src_id, &tgt_id, sizeof(cpu_buf), 1);
-          mbedtls_printf("Received message from CPU.");
-
-          if (tgt_id == SCEWL_BRDCST_ID) {
-            handle_brdcst_send(cpu_buf, len);
-          } else if (tgt_id == SCEWL_SSS_ID) {
-            registered = handle_registration(cpu_buf);
-          } else if (tgt_id == SCEWL_FAA_ID) {
-            handle_faa_send(cpu_buf, len);
-          } else {
-            dtls_send_message(&dtls_state, tgt_id, cpu_buf, len);
-          }
-
-          continue;
+          dtls_send_message(&dtls_state, tgt_id, cpu_buf, len);
         }
       }
+    }
 
-      // handle incoming radio message
-      if (intf_avail(RAD_INTF)) {
-        // Read message from antenna
-        len = read_msg(RAD_INTF, scewl_buf, &src_id, &tgt_id, sizeof(scewl_buf), 1);
+    // handle incoming radio message
+    if (intf_avail(RAD_INTF)) {
+      // Read message from antenna
+      len = read_msg(RAD_INTF, scewl_buf, &src_id, &tgt_id, sizeof(scewl_buf), 1);
 
-        if (src_id != SCEWL_ID) { // ignore our own outgoing messages
-          if (tgt_id == SCEWL_BRDCST_ID) {
-            // receive broadcast message
-            handle_brdcst_recv(scewl_buf, src_id, len);
-          } else if (tgt_id == SCEWL_ID) {
-            // receive unicast message
-            if (src_id == SCEWL_FAA_ID) {
-              handle_faa_recv(scewl_buf, len);
-            } else {
-              dtls_handle_packet(&dtls_state, src_id, scewl_buf, len);
-            }
+      if (src_id != SCEWL_ID) { // ignore our own outgoing messages
+        if (tgt_id == SCEWL_BRDCST_ID) {
+          // receive broadcast message
+          handle_brdcst_recv(scewl_buf, src_id, len);
+        } else if (tgt_id == SCEWL_ID) {
+          // receive unicast message
+          if (src_id == SCEWL_FAA_ID) {
+            handle_faa_recv(scewl_buf, len);
+          } else {
+            dtls_handle_packet(&dtls_state, src_id, scewl_buf, len);
           }
+        }
+      }
+    }
+
+    // handle incoming message from SSS
+    if (intf_avail(SSS_INTF)) {
+      if (dtls_state.status != TALKING_TO_SSS) {
+        mbedtls_printf("Discarding unsolicited packet on SSS interface.");
+        read_msg(SSS_INTF, scewl_buf, &src_id, &tgt_id, sizeof(scewl_buf), 1);
+      } else {
+        // Read message from wire
+        mbedtls_printf("Receiving packet on SSS interface.");
+        len = read_msg(SSS_INTF, scewl_buf, &src_id, &tgt_id, sizeof(scewl_buf), 1);
+        if (src_id == SCEWL_SSS_ID && tgt_id == SCEWL_ID) {
+          mbedtls_printf("Received packet from SSS.");
+          dtls_handle_packet(&dtls_state, src_id, scewl_buf, len);
+        } else {
+          mbedtls_printf("Received bogon on SSS interface.");
         }
       }
     }

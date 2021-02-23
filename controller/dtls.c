@@ -276,7 +276,7 @@ static int dtls_server_ssl_send(void *ctx, const unsigned char *buf, size_t len)
 		return -1;
 	}
 	struct dtls_server_state *state = (struct dtls_server_state *) ctx;
-	handle_scewl_send((const char *) buf, state->client_scewl_id, len);
+	send_msg(RAD_INTF, SCEWL_ID, state->client_scewl_id, len, (const char *) buf);
 	return len;
 }
 
@@ -306,7 +306,11 @@ static int dtls_client_ssl_send(void *ctx, const unsigned char *buf, size_t len)
 		return -1;
 	}
 	struct dtls_client_state *session_state = (struct dtls_client_state *) ctx;
-	handle_scewl_send((const char *) buf, session_state->server_scewl_id, len);
+	if (session_state->channel == SCEWL) {
+		send_msg(RAD_INTF, SCEWL_ID, session_state->server_scewl_id, len, (const char *) buf);
+	} else if (session_state->channel == SSS) {
+		send_msg(SSS_INTF, SCEWL_ID, session_state->server_scewl_id, len, (const char *) buf);
+	}
 	return len;
 }
 
@@ -412,7 +416,7 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
 			server_state->status = DONE;
 			return;
 		} else if (ret == 0) {
-			mbedtls_printf("handshake complete");
+			mbedtls_printf("Handshake complete.");
 			server_state->status = READ;
 		} else if (ret == MBEDTLS_ERR_SSL_BAD_HS_CLIENT_HELLO) {
 			// The packet was probably not a hello packet at all.
@@ -473,7 +477,7 @@ static void dtls_client_run(struct dtls_client_state *state) {
 		ret = mbedtls_ssl_handshake(&state->ssl);
 
 		if (ret == 0) {
-			mbedtls_printf("handshake complete");
+			mbedtls_printf("Handshake complete.");
 			state->status = WRITE;
 		} else if (ret != MBEDTLS_ERR_SSL_WANT_READ) {
 			mbedtls_printf("failed! mbedtls_ssl_handshake returned -%#06x", (unsigned int) -ret);
@@ -488,7 +492,13 @@ static void dtls_client_run(struct dtls_client_state *state) {
 			if (ret > 0) {
 				pos += ret;
 				if (pos == state->message_len) {
-					state->status = DONE;
+					if (state->channel == SSS) {
+						mbedtls_printf("Sent request. Receiving response...");
+						state->status = READ;
+						state->message_len = 0;
+					} else {
+						state->status = DONE;
+					}
 					break;
 				}
 			}
@@ -498,13 +508,47 @@ static void dtls_client_run(struct dtls_client_state *state) {
 			dtls_print_error(ret);
 			state->status = DONE;
 		}
+	} else if (state->status == READ) {
+		do {
+			ret = mbedtls_ssl_read(&state->ssl, (unsigned char *) &state->message[state->message_len], SCEWL_MAX_DATA_SZ - state->message_len);
+			if (ret > 0) {
+				state->message_len += ret;
+				if (state->message_len == sizeof(scewl_sss_msg_t)) {
+					state->status = DONE;
+					break;
+				}
+			}
+		} while (ret > 0);
+		if (ret < 0) {
+			switch (ret) {
+				case MBEDTLS_ERR_SSL_WANT_READ:
+					break;
+				case MBEDTLS_ERR_SSL_TIMEOUT:
+					mbedtls_printf("timeout");
+					state->status = DONE;
+					break;
+				case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+					mbedtls_printf("session was closed gracefully");
+					state->status = DONE;
+					break;
+				default:
+					mbedtls_printf("mbedtls_ssl_read returned -%#06x", (unsigned int) -ret);
+					dtls_print_error(ret);
+					state->status = DONE;
+			}
+		}
 	}
 	if (state->status == DONE) {
 		mbedtls_printf("Closing the connection...");
 		// No error checking, the connection might be closed already
 		mbedtls_ssl_close_notify(&state->ssl);
 		mbedtls_printf("done");
-		mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->server_scewl_id, state->message_len, state->message);
+		if (state->channel == SCEWL) {
+			mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->server_scewl_id, state->message_len, state->message);
+		} else if (state->channel == SSS) {
+			mbedtls_printf("Received response.");
+			handle_sss_recv(state->message, state->message_len);
+		}
 	}
 }
 
@@ -518,13 +562,40 @@ void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *messag
 			return;
 		case SENDING_MESSAGE:
 		case RECEIVING_MESSAGE:
+		case TALKING_TO_SSS:
 			// Should never happen
 			mbedtls_printf("Attempted to send a message while there is an active session.");
 			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
 			return;
 		case IDLE:
 			state->status = SENDING_MESSAGE;
+			state->client_state.channel = SCEWL;
 			state->client_state.server_scewl_id = dst_id;
+			dtls_client_startup(state, &state->client_state, message, message_len);
+			dtls_client_run(&state->client_state);
+			return;
+	}
+}
+
+/*
+ * Send a message to the SSS.
+ */
+void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t message_len) {
+	switch (state->status) {
+		case FATAL_ERROR:
+			mbedtls_printf("The DTLS subsystem is in FATAL_ERROR state.");
+			return;
+		case SENDING_MESSAGE:
+		case RECEIVING_MESSAGE:
+		case TALKING_TO_SSS:
+			// Should never happen
+			mbedtls_printf("Attempted to send a message while there is an active session.");
+			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+			return;
+		case IDLE:
+			state->status = TALKING_TO_SSS;
+			state->client_state.channel = SSS;
+			state->client_state.server_scewl_id = SCEWL_SSS_ID;
 			dtls_client_startup(state, &state->client_state, message, message_len);
 			dtls_client_run(&state->client_state);
 			return;
@@ -540,6 +611,7 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
 			mbedtls_printf("The DTLS subsystem is in FATAL_ERROR state.");
 			return;
 		case SENDING_MESSAGE:
+		case TALKING_TO_SSS:
 			// DTLS client packet handling
 			if (state->client_state.server_scewl_id == src_id) {
 				// Give the session the data that we received
@@ -580,19 +652,26 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
  * This function must be called often.
  */
 void dtls_check_timers(struct dtls_state *state) {
-	if (state->status == SENDING_MESSAGE) {
-		if (timers_get_delay(&state->client_state.timers) == 2) {
-				dtls_client_run(&state->client_state);
-				if (state->client_state.status == DONE) {
+	switch (state->status) {
+		case SENDING_MESSAGE:
+		case TALKING_TO_SSS:
+			if (timers_get_delay(&state->client_state.timers) == 2) {
+					dtls_client_run(&state->client_state);
+					if (state->client_state.status == DONE) {
+						state->status = IDLE;
+					}
+			}
+			break;
+		case RECEIVING_MESSAGE:
+			if (timers_get_delay(&state->server_state.timers) == 2) {
+				dtls_server_run(&state->server_state);
+				if (state->server_state.status == DONE) {
 					state->status = IDLE;
 				}
 			}
-	} else if (state->status == RECEIVING_MESSAGE) {
-		if (timers_get_delay(&state->server_state.timers) == 2) {
-			dtls_server_run(&state->server_state);
-			if (state->server_state.status == DONE) {
-				state->status = IDLE;
-			}
-		}
+			break;
+		case IDLE:
+		case FATAL_ERROR:
+			break;
 	}
 }

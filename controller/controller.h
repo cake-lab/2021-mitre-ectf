@@ -52,7 +52,7 @@ typedef struct scewl_sss_msg_t {
 enum scewl_status { SCEWL_ERR = -1, SCEWL_OK, SCEWL_ALREADY, SCEWL_NO_MSG };
 
 // registration/deregistration options
-enum scewl_sss_op_t { SCEWL_SSS_ALREADY = -1, SCEWL_SSS_REG, SCEWL_SSS_DEREG };
+enum scewl_sss_op_t { SCEWL_SSS_BAD_REQUEST = -1, SCEWL_SSS_REG, SCEWL_SSS_DEREG };
 
 // reserved SCEWL IDs
 enum scewl_ids { SCEWL_BRDCST_ID, SCEWL_SSS_ID, SCEWL_FAA_ID };
@@ -88,18 +88,18 @@ int read_msg(intf_t *intf, char *buf, scewl_id_t *src_id, scewl_id_t *tgt_id,
 int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, const char *data);
 
 /*
+ * handle_sss_recv
+ * 
+ * Handles a message received from the SSS
+ */
+int handle_sss_recv(const char* data, uint16_t len);
+
+/*
  * handle_scewl_recv
  * 
  * Interprets a SCEWL tranmission from another SED and sends the message to the CPU
  */
 int handle_scewl_recv(const char* data, scewl_id_t src_id, uint16_t len);
-
-/*
- * handle_scewl_send
- * 
- * Sends a message to another SED from the CPU
- */
-int handle_scewl_send(const char* buf, scewl_id_t tgt_id, uint16_t len);
 
 /*
  * handle_brdcst_recv
@@ -129,30 +129,4 @@ int handle_faa_recv(const char* data, uint16_t len);
  */
 int handle_faa_send(const char* data, uint16_t len);
 
-/*
- * handle_registration
- * 
- * Interprets a CPU registration message
- * 
- * args:
- *   op - pointer to the operation message received by the CPU
- */
-int handle_registration(char* op);
-
-/*
- * sss_register
- * 
- * Performs a registration with the SSS
- */
-int sss_register();
-
-/*
- * sss_deregister
- * 
- * Performs a deregistration with the SSS
- */
-int sss_deregister();
-
-
 #endif
-
