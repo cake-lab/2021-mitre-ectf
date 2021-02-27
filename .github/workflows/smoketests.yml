@@ -28,6 +28,8 @@ jobs:
             START_ID: 10
             END_ID: 12
             DEBUG_LEVEL: 2
+            SC_PROBE_SOCK: sc_probe.sock
+            SC_RECVR_SOCK: sc_recvr.sock
           install: |
             apt-get update
             apt-get -y install make docker.io
