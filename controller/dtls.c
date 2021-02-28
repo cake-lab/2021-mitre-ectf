@@ -191,19 +191,95 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 }
 
 /*
+ * Load the CA certificate and this SED's certificate and private key.
+ */
+void dtls_rekey(
+	struct dtls_state *state,
+	const unsigned char *ca, uint16_t ca_len,
+	const unsigned char *crt, uint16_t crt_len,
+	const unsigned char *key, uint16_t key_len,
+	bool free_existing, bool verify_cn
+) {
+	int ret;
+	uint32_t flags;
+	char scewl_id_str[6];
+	char *cn;
+	char cert_info[1000];
+
+	if (free_existing) {
+		mbedtls_x509_crt_free(&state->ca);
+		mbedtls_x509_crt_free(&state->cert);
+		mbedtls_pk_free(&state->pkey);
+	}
+
+	if (verify_cn) {
+		mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
+		cn = scewl_id_str;
+	} else {
+		cn = NULL;
+	}
+
+	ret = mbedtls_x509_crt_parse(&state->ca, ca, ca_len);
+	if (ret != 0) {
+		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
+		dtls_fatal_error(state, ret);
+		return;
+	}
+
+	ret = mbedtls_x509_crt_parse(&state->cert, crt, crt_len);
+	if (ret != 0) {
+		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
+		dtls_fatal_error(state, ret);
+		return;
+	}
+
+	ret = mbedtls_pk_parse_key(&state->pkey, key, key_len, NULL, 0);
+	if (ret != 0) {
+		mbedtls_printf("failed! mbedtls_pk_parse_key returned -%#06x", (unsigned int) -ret);
+		dtls_fatal_error(state, ret);
+		return;
+	}
+
+	ret = mbedtls_x509_crt_verify(&state->cert, &state->ca, NULL, cn, &flags, NULL, NULL);
+	if (ret != 0) {
+		mbedtls_printf("failed! mbedtls_x509_crt_verify returned -%#06x with flags %#10x", (unsigned int) -ret, flags);
+		dtls_fatal_error(state, ret);
+		return;
+	}
+
+	mbedtls_printf("Successfully loaded certificates and key.");
+	ret = mbedtls_x509_crt_info(cert_info, 1000, NULL, &state->cert);
+	if (ret > 0) {
+		mbedtls_printf("This SED's certificate: %s", cert_info);
+	}
+}
+
+/*
+ * Load the CA certificate and this SED's certificate and private key from the built-in values.
+ */
+void dtls_rekey_to_default(struct dtls_state *state, bool free_existing, bool verify_cn) {
+	dtls_rekey(
+		state, 
+		(const unsigned char *) provision_ca, strlen(provision_ca) + 1,
+		(const unsigned char *) sed_provision_crt, strlen(sed_provision_crt) + 1,
+		(const unsigned char *) sed_provision_key, strlen(sed_provision_key) + 1,
+		free_existing, verify_cn
+	);
+}
+
+/*
  * Initialize things that are common to the DTLS server and client.
  * This is called once.
  */
 void dtls_setup(struct dtls_state *state, char *message_buf) {
 	int ret;
-	uint32_t flags;
-	char scewl_id_str[16];
+	char scewl_id_str[6];
 	int scewl_id_str_len;
 
 	state->status = IDLE;
 	state->server_state.message = message_buf;
 
-	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 16, "%u_PROVISION", (unsigned int) SCEWL_ID);
+	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
 
 	mbedtls_x509_crt_init(&state->ca);
 	mbedtls_x509_crt_init(&state->cert);
@@ -215,38 +291,7 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 	 */
 	mbedtls_printf("Loading certificates and key...");
 
-	/*
-	 * This demonstration program uses embedded test certificates.
-	 * Instead, you may want to use mbedtls_x509_crt_parse_file() to read the
-	 * server and CA certificates, as well as mbedtls_pk_parse_keyfile().
-	 */
-	ret = mbedtls_x509_crt_parse(&state->ca, (const unsigned char *) provision_ca, strlen(provision_ca)+1);
-	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
-		dtls_fatal_error(state, ret);
-		return;
-	}
-
-	ret = mbedtls_x509_crt_parse(&state->cert, (const unsigned char *) sed_provision_crt, strlen(sed_provision_crt)+1);
-	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
-		dtls_fatal_error(state, ret);
-		return;
-	}
-
-	ret = mbedtls_pk_parse_key(&state->pkey, (const unsigned char *) sed_provision_key, strlen(sed_provision_key)+1, NULL, 0);
-	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_pk_parse_key returned -%#06x", (unsigned int) -ret);
-		dtls_fatal_error(state, ret);
-		return;
-	}
-
-	ret = mbedtls_x509_crt_verify(&state->cert, &state->ca, NULL, scewl_id_str, &flags, NULL, NULL);
-	if (ret != 0) {
-		mbedtls_printf("failed! mbedtls_x509_crt_verify returned -%#06x with flags %#10x", (unsigned int) -ret, flags);
-		dtls_fatal_error(state, ret);
-		return;
-	}
+	dtls_rekey_to_default(state, false, false);
 
 	mbedtls_printf("ok");
 
@@ -470,7 +515,7 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
 /*
  * Do some processing for the client session.
  */
-static void dtls_client_run(struct dtls_client_state *state) {
+static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_state *state) {
 	int ret, pos;
 
 	if (state->status == HANDSHAKE) {
@@ -513,9 +558,12 @@ static void dtls_client_run(struct dtls_client_state *state) {
 			ret = mbedtls_ssl_read(&state->ssl, (unsigned char *) &state->message[state->message_len], SCEWL_MAX_DATA_SZ - state->message_len);
 			if (ret > 0) {
 				state->message_len += ret;
-				if (state->message_len == sizeof(scewl_sss_msg_t)) {
-					state->status = DONE;
-					break;
+				if (state->message_len >= sizeof(scewl_sss_msg_t)) {
+					scewl_sss_msg_t *msg = (scewl_sss_msg_t *) state->message;
+					if (state->message_len - sizeof(scewl_sss_msg_t) >= msg->ca_len + msg->crt_len + msg->key_len) {
+						state->status = DONE;
+						break;
+					}
 				}
 			}
 		} while (ret > 0);
@@ -547,7 +595,7 @@ static void dtls_client_run(struct dtls_client_state *state) {
 			mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->server_scewl_id, state->message_len, state->message);
 		} else if (state->channel == SSS) {
 			mbedtls_printf("Received response.");
-			handle_sss_recv(state->message, state->message_len);
+			handle_sss_recv(dtls_state, state->message, state->message_len);
 		}
 	}
 }
@@ -555,7 +603,7 @@ static void dtls_client_run(struct dtls_client_state *state) {
 /*
  * Send a message to another SED.
  */
-void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *message, size_t message_len) {
+void dtls_send_message(struct dtls_state *state, uint16_t dst_id, char *message, size_t message_len) {
 	switch (state->status) {
 		case FATAL_ERROR:
 			mbedtls_printf("The DTLS subsystem is in FATAL_ERROR state.");
@@ -572,7 +620,7 @@ void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *messag
 			state->client_state.channel = SCEWL;
 			state->client_state.server_scewl_id = dst_id;
 			dtls_client_startup(state, &state->client_state, message, message_len);
-			dtls_client_run(&state->client_state);
+			dtls_client_run(state, &state->client_state);
 			return;
 	}
 }
@@ -597,7 +645,7 @@ void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t me
 			state->client_state.channel = SSS;
 			state->client_state.server_scewl_id = SCEWL_SSS_ID;
 			dtls_client_startup(state, &state->client_state, message, message_len);
-			dtls_client_run(&state->client_state);
+			dtls_client_run(state, &state->client_state);
 			return;
 	}
 }
@@ -605,7 +653,7 @@ void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t me
 /*
  * Handle a DTLS packet received over the SCEWL bus.
  */
-void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data, size_t data_len) {
+void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, size_t data_len) {
 	switch (state->status) {
 		case FATAL_ERROR:
 			mbedtls_printf("The DTLS subsystem is in FATAL_ERROR state.");
@@ -616,7 +664,7 @@ void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data,
 			if (state->client_state.server_scewl_id == src_id) {
 				// Give the session the data that we received
 				dtls_client_feed(&state->client_state, data, data_len);
-				dtls_client_run(&state->client_state);
+				dtls_client_run(state, &state->client_state);
 				if (state->client_state.status == DONE) {
 					state->status = IDLE;
 				}
@@ -656,7 +704,7 @@ void dtls_check_timers(struct dtls_state *state) {
 		case SENDING_MESSAGE:
 		case TALKING_TO_SSS:
 			if (timers_get_delay(&state->client_state.timers) == 2) {
-					dtls_client_run(&state->client_state);
+					dtls_client_run(state, &state->client_state);
 					if (state->client_state.status == DONE) {
 						state->status = IDLE;
 					}

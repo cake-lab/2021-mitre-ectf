@@ -11,6 +11,7 @@
 # and may not meet MITRE standards for quality. Use this code at your own risk!
 
 from contextlib import suppress
+from datetime import datetime, timedelta
 import socket
 import select
 import struct
@@ -18,13 +19,14 @@ import argparse
 import logging
 import os
 
-from mbedtls import pk, tls, x509
+from mbedtls import hashlib, pk, tls, x509
 from mbedtls.exceptions import TLSError
 
 
 SSS_IP = 'localhost'
 SSS_ID = 1
 SCEWL_MTU = 1000
+MAX_FRAG_LENGTH = 935
 
 # mirroring scewl enum at scewl.c:4
 BAD_REQUEST, REG, DEREG = -1, 0, 1
@@ -87,10 +89,18 @@ class ScewlSocket(tls.TLSWrappedSocket):
 	def sendall(self, message, flags=0):
 		if flags != 0:
 			raise Exception(f'Flags not supported. Flags passed: {flags}')
-		self._buffer.write(message)
-		self._send_scewl()
+		bytes_sent = 0
+		while len(message) > MAX_FRAG_LENGTH:
+			self._buffer.write(message[:MAX_FRAG_LENGTH])
+			self._send_scewl()
+			message = message[MAX_FRAG_LENGTH:]
+			bytes_sent += MAX_FRAG_LENGTH
+		if len(message) > 0:
+			self._buffer.write(message)
+			self._send_scewl()
+			bytes_sent += len(message)
 		self._recv_scewl()
-		return len(message)
+		return bytes_sent
 
 	def getpeername(self):
 		if hasattr(self, 'peername'):
@@ -124,11 +134,13 @@ class ScewlSocket(tls.TLSWrappedSocket):
 
 
 class Device:
-	def __init__(self, conn, addr):
+	def __init__(self, sss, conn, addr):
+		self.sss = sss
 		self.conn = conn
 		self.addr = addr
 		self.handshake_complete = False
 		self.registered = False
+		self.runtime_cert = None
 
 	def new_conn(self, conn):
 		self.conn = conn
@@ -165,33 +177,43 @@ class Device:
 		dev_id, op = struct.unpack('<Hh', data)
 
 		# Process request
-		status = BAD_REQUEST
+		resp = struct.pack('<HhHHH', self.addr, BAD_REQUEST, 0, 0, 0)
 		if op == REG:
 			if self.registered:
 				logging.warn(f'Client {self.addr} requested to register when it is already registered.')
 			else:
-				status = self.register()
+				resp = self.register()
 				logging.info(f'Client {self.addr} registered.')
 		elif op == DEREG:
 			if self.registered:
-				status = self.deregister()
+				resp = self.deregister()
 				logging.info(f'Client {self.addr} deregistered.')
 			else:
 				logging.warn(f'Client {self.addr} requested to deregister when it is not registered.')
 
 		# Send response
-		resp = struct.pack('<Hh', dev_id, status)
 		self.conn.send(resp)
 
 		logging.debug(f'Finished transaction with client {self.addr}')
 
 	def register(self):
-		# TODO
-		return REG
+		now = datetime.utcnow()
+		key = pk.RSA()
+		key.generate()
+		csr = x509.CSR.new(key, f'CN={self.addr}', hashlib.sha256())
+		self.runtime_cert = self.sss.runtime_ca_cert.sign(
+			csr, self.sss.runtime_ca_key,
+			not_before=now, not_after=now + timedelta(hours=8),
+			serial_number=self.addr
+		)
+		ca_der = self.sss.runtime_ca_cert.export(format="DER")
+		crt_der = self.runtime_cert.export(format="DER")
+		pk_der = key.export_key(format="DER")
+		return struct.pack('<HhHHH', self.addr, REG, len(ca_der), len(crt_der), len(pk_der)) + ca_der + crt_der + pk_der
 
 	def deregister(self):
-		# TODO
-		return DEREG
+		self.runtime_cert = None
+		return struct.pack('<HhHHH', self.addr, DEREG, 0, 0, 0)
 
 
 class SSS:
@@ -207,6 +229,18 @@ class SSS:
 		self.provision_ca_cert = x509.CRT.from_file('/secrets/sss/ca.crt')
 		with open('/secrets/sss/ca.key', 'r') as keyfile:
 			self.provision_ca_key = pk.RSA.from_buffer(x509.PEM_to_DER(keyfile.read()))
+
+		# Generate runtime CA certificate and key
+		now = datetime.utcnow()
+		self.runtime_ca_key = pk.RSA()
+		self.runtime_ca_key.generate()
+		csr = x509.CSR.new(self.runtime_ca_key, "CN=SSS", hashlib.sha256())
+		self.runtime_ca_cert = x509.CRT.selfsign(
+			csr, self.runtime_ca_key,
+			not_before=now, not_after=now + timedelta(hours=8),
+			serial_number=0x1,
+			basic_constraints=x509.BasicConstraints(ca=True, max_path_length=1)
+		)
 
 		# Trust store for registration
 		trust_store = tls.TrustStore()
@@ -246,14 +280,14 @@ class SSS:
 				stream_conn, _ = self.sock.accept()
 				buffers = tls.ServerContext(self.dtls_conf).wrap_buffers()
 				conn = ScewlSocket(stream_conn, buffers)
-				peername = conn.getpeername()
+				peername = int(conn.getpeername())
 				if peername is not None:
 					logging.debug(f'New connection from {peername}.')
 					conn.setcookieparam(conn.getpeername().encode("ascii"))
 					if peername in self.devs:
 						self.devs[peername].new_conn(conn)
 					else:
-						self.devs[peername] = Device(conn, peername)
+						self.devs[peername] = Device(self, conn, peername)
 				readable.remove(self.sock)
 			for conn in readable:
 				# Handle request from an already-connected SED

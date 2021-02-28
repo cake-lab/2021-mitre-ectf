@@ -17,7 +17,6 @@
 #include "mbedtls/ssl.h"
 #include "masked_aes.h"
 #include "timers.h"
-#include "dtls.h"
 
 // Cannot include printf.h because it contains preprocessor defines that cause problems
 // These functions are defined in printf.c
@@ -123,28 +122,36 @@ int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, c
 }
 
 
-int handle_sss_recv(const char* data, uint16_t len) {
+int handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len) {
   scewl_sss_msg_t *msg;
+  const unsigned char *ca, *crt, *key;
 
-  if (len == sizeof(scewl_sss_msg_t)) {
+  if (len >= sizeof(scewl_sss_msg_t)) {
     msg = (scewl_sss_msg_t *) data;
-    switch (msg->op) {
-      case SCEWL_SSS_REG:
-        registered = true;
-        mbedtls_printf("Registered.");
-        break;
-      case SCEWL_SSS_DEREG:
-        registered = false;
-        mbedtls_printf("Deregistered.");
-        break;
-      default:
-        mbedtls_printf("Received response from SSS with invalid status.");
+    if (msg->ca_len + msg->crt_len + msg->key_len == len - sizeof(scewl_sss_msg_t)) {
+      switch (msg->op) {
+        case SCEWL_SSS_REG:
+          ca = (const unsigned char *) data + sizeof(scewl_sss_msg_t);
+          crt = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len;
+          key = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len + msg->crt_len;
+          dtls_rekey(dtls_state, ca, msg->ca_len, crt, msg->crt_len, key, msg->key_len, true, true);
+          registered = true;
+          mbedtls_printf("Registered.");
+          break;
+        case SCEWL_SSS_DEREG:
+          dtls_rekey_to_default(dtls_state, true, false);
+          registered = false;
+          mbedtls_printf("Deregistered.");
+          break;
+        default:
+          mbedtls_printf("Received response from SSS with invalid status.");
+      }
+      // forward message to CPU
+      send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, len, data);
+      return;
     }
-    // forward message to CPU
-    send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, len, data);
-  } else {
-    mbedtls_printf("Received invalid response from SSS.");
   }
+  mbedtls_printf("Received invalid response from SSS.");
 }
 
 

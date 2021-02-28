@@ -15,6 +15,7 @@
 
 #include "interface.h"
 #include "lm3s/lm3s_cmsis.h"
+#include "dtls.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -46,6 +47,10 @@ typedef struct scewl_hdr_t {
 typedef struct scewl_sss_msg_t {
   scewl_id_t dev_id;
   uint16_t   op;
+  uint16_t ca_len;
+  uint16_t crt_len;
+  uint16_t key_len;
+  /* data follows */
 } scewl_sss_msg_t;
 
 // SCEWL status codes
@@ -92,7 +97,7 @@ int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, c
  * 
  * Handles a message received from the SSS
  */
-int handle_sss_recv(const char* data, uint16_t len);
+int handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len);
 
 /*
  * handle_scewl_recv

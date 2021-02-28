@@ -7,8 +7,6 @@
 
 #include <stdbool.h>
 
-#include "controller.h"
-
 #include "mbedtls/md.h"
 #include "mbedtls/hmac_drbg.h"
 #include "mbedtls/certs.h"
@@ -50,7 +48,7 @@ struct dtls_timers {
 };
 
 struct dtls_server_state {
-	scewl_id_t client_scewl_id;
+	uint16_t client_scewl_id;
 	enum dtls_session_status status;
 	struct dtls_timers timers;
 
@@ -74,7 +72,7 @@ struct dtls_server_state {
 
 struct dtls_client_state {
 	enum dtls_session_channel channel;
-	scewl_id_t server_scewl_id;
+	uint16_t server_scewl_id;
 	enum dtls_session_status status;
 	struct dtls_timers timers;
 
@@ -105,10 +103,16 @@ struct dtls_state {
 };
 
 void dtls_teardown(struct dtls_state *state);
+void dtls_rekey(struct dtls_state *state,
+	const unsigned char *ca, uint16_t ca_len,
+	const unsigned char *crt, uint16_t crt_len,
+	const unsigned char *key, uint16_t key_len,
+	bool free_existing, bool verify_cn);
+void dtls_rekey_to_default(struct dtls_state *state, bool free_existing, bool verify_cn);
 void dtls_setup(struct dtls_state *state, char *message_buf);
-void dtls_send_message(struct dtls_state *state, scewl_id_t dst_id, char *message, size_t message_len);
+void dtls_send_message(struct dtls_state *state, uint16_t dst_id, char *message, size_t message_len);
 void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t message_len);
-void dtls_handle_packet(struct dtls_state *state, scewl_id_t src_id, char *data, size_t data_len);
+void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, size_t data_len);
 void dtls_check_timers(struct dtls_state *state);
 
 #endif // DTLS_H
