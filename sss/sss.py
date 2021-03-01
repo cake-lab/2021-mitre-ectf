@@ -146,8 +146,7 @@ class Device:
 		self.conn = conn
 
 	def disconnect(self):
-		self.conn.shutdown(socket.SHUT_RDWR)
-		self.conn = None
+		self.conn._buffer.shutdown()
 		self.handshake_complete = False
 
 	def handle(self):
@@ -158,13 +157,13 @@ class Device:
 			self.handshake()
 
 	def handshake(self):
+		self.conn.setcookieparam(self.conn.getpeername().encode("ascii"))
 		try:
 			block(self.conn.do_handshake)
 			logging.debug(f'Finished handshake with {self.conn.getpeername()}.')
 			self.handshake_complete = True
 		except tls.HelloVerifyRequest:
 			logging.debug(f'Hello verification requested.')
-			self.conn.setcookieparam(self.conn.getpeername().encode("ascii"))
 		except TLSError:
 			logging.exception(f'Handshake with {self.conn.getpeername()} failed.')
 			self.disconnect()
@@ -180,16 +179,18 @@ class Device:
 		resp = struct.pack('<HhHHH', self.addr, BAD_REQUEST, 0, 0, 0)
 		if op == REG:
 			if self.registered:
-				logging.warn(f'Client {self.addr} requested to register when it is already registered.')
+				logging.warning(f'Client {self.addr} requested to register when it is already registered.')
 			else:
 				resp = self.register()
+				self.registered = True
 				logging.info(f'Client {self.addr} registered.')
 		elif op == DEREG:
 			if self.registered:
 				resp = self.deregister()
+				self.registered = False
 				logging.info(f'Client {self.addr} deregistered.')
 			else:
-				logging.warn(f'Client {self.addr} requested to deregister when it is not registered.')
+				logging.warning(f'Client {self.addr} requested to deregister when it is not registered.')
 
 		# Send response
 		self.conn.send(resp)
@@ -283,7 +284,6 @@ class SSS:
 				peername = int(conn.getpeername())
 				if peername is not None:
 					logging.debug(f'New connection from {peername}.')
-					conn.setcookieparam(conn.getpeername().encode("ascii"))
 					if peername in self.devs:
 						self.devs[peername].new_conn(conn)
 					else:

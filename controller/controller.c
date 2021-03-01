@@ -282,6 +282,8 @@ int main() {
         if (tgt_id == SCEWL_BRDCST_ID) {
           handle_brdcst_send(cpu_buf, len);
         } else if (tgt_id == SCEWL_SSS_ID) {
+          mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
+          dtls_rekey_to_default(&dtls_state, true, false);
           dtls_send_message_to_sss(&dtls_state, cpu_buf, len);
         } else if (tgt_id == SCEWL_FAA_ID) {
           handle_faa_send(cpu_buf, len);
