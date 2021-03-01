@@ -26,9 +26,6 @@ int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
 #define send_str(M) send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, strlen(M), M)
 #define BLOCK_SIZE 16
 #define MAX_PRINTF_LENGTH 1000
-#ifndef DEBUG_LEVEL
-#define DEBUG_LEVEL 1
-#endif
 
 static bool registered;
 
@@ -187,8 +184,8 @@ void exit(int status) {
  */
 int printf(const char *format, ...) {
   va_list args;
+#ifdef DEBUG_LEVEL
   char message[MAX_PRINTF_LENGTH];
-
   va_start(args, format);
   int length = vsnprintf_(message, MAX_PRINTF_LENGTH, format, args);
   va_end(args);
@@ -197,6 +194,9 @@ int printf(const char *format, ...) {
   }
   handle_faa_send(message, length);
   return length;
+#else
+  return 0;
+#endif
 }
 
 /*
@@ -249,7 +249,7 @@ int main() {
   mbedtls_platform_set_printf(printf);
   mbedtls_platform_set_snprintf(snprintf_);
   mbedtls_platform_set_vsnprintf(vsnprintf_);
-#if defined(MBEDTLS_DEBUG_C)
+#if defined(MBEDTLS_DEBUG_C) && defined(DEBUG_LEVEL)
   mbedtls_debug_set_threshold(DEBUG_LEVEL);
 #endif
   mbedtls_printf("Hello, world! This is from main.");

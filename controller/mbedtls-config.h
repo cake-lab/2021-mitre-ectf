@@ -30,8 +30,12 @@
 #define MBEDTLS_CONFIG_H
 
 /* Debugging */
+#ifdef DEBUG_LEVEL
 #define MBEDTLS_DEBUG_C
 #define MBEDTLS_ERROR_C
+#else
+#define MBEDTLS_ERROR_STRERROR_DUMMY
+#endif
 
 /* System support */
 #define MBEDTLS_HAVE_ASM
