@@ -114,7 +114,11 @@ launch_sed_gdb: launch_sed
 launch_sed_sc: SC=sc-
 launch_sed_sc: CONT_DOCK_OPT='--network host'
 launch_sed_sc: launch_sed_d
-	
+
+launch_sed_cit:
+	$(call check_defined, DEPLOYMENT SCEWL_ID NAME SOCK_ROOT)
+	./tools/launch_sed_cit.sh &
+
 ############################################################
 # launch FAA transceiver
 launch_faa:

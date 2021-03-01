@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   echo:
-    name: Run example echo server and client
+    name: Run echo server and client
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
@@ -36,16 +36,18 @@ jobs:
           run: |
             make create_deployment
             make add_sed SED=echo_server SCEWL_ID=10 NAME=echo_server
-            make add_sed SED=echo_client SCEWL_ID=11 NAME=echo_client CUSTOM='TGT_ID=10'
+            make add_sed SED=echo_client_enhanced SCEWL_ID=11 NAME=echo_client_enhanced CUSTOM='TGT_ID=10'
             make deploy
             python3 tools/faa_read.py socks/faa.sock &
             FAA_READER_PID=$!
-            make launch_sed_d NAME=echo_server SCEWL_ID=10
+            make launch_sed_cit NAME=echo_server SCEWL_ID=10
             sleep 5
-            make launch_sed_d NAME=echo_client SCEWL_ID=11
+            make launch_sed_cit NAME=echo_client_enhanced SCEWL_ID=11
             wait $FAA_READER_PID
       - name: Check for flag
         run: |
           cat faa.log
+          cat 10-cpu.log
+          cat 11-cpu.log
           docker ps
-          grep -q 'ectf{boot_cafecoffee1a77e5}' faa.log
+          tail -n 1 11-cpu.log | grep -q 'SUCCESS'

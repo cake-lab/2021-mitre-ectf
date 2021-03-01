@@ -17,7 +17,7 @@
 
 // SCEWL_ID needs to be defined at compile
 
-#define DLEN 0x3fff
+#define DLEN 0x4000
 
 int main(void) {
   scewl_id_t src_id, tgt_id;
