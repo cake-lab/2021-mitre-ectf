@@ -535,7 +535,8 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 	if (state->status == WRITE) {
 		pos = 0;
 		while (true) {
-			ret = mbedtls_ssl_write(&state->ssl, (unsigned char *) &state->message[pos], state->message_len - pos);
+			ret = mbedtls_ssl_write(&state->ssl, (unsigned char *) &state->message[pos],
+				state->message_len - pos <= SCEWL_MTU - 65 ? state->message_len - pos : SCEWL_MTU - 65);
 			if (ret >= 0) {
 				pos += ret;
 				if (pos == state->message_len) {
