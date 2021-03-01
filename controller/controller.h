@@ -97,7 +97,7 @@ int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, c
  * 
  * Handles a message received from the SSS
  */
-int handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len);
+void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len);
 
 /*
  * handle_scewl_recv
