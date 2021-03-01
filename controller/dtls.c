@@ -517,6 +517,7 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
  */
 static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_state *state) {
 	int ret, pos;
+	bool succeeded;
 
 	if (state->status == HANDSHAKE) {
 		ret = mbedtls_ssl_handshake(&state->ssl);
@@ -528,13 +529,14 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 			mbedtls_printf("failed! mbedtls_ssl_handshake returned -%#06x", (unsigned int) -ret);
 			dtls_print_error(ret);
 			state->status = DONE;
+			succeeded = false;
 		}
 	}
 	if (state->status == WRITE) {
 		pos = 0;
-		do {
+		while (true) {
 			ret = mbedtls_ssl_write(&state->ssl, (unsigned char *) &state->message[pos], state->message_len - pos);
-			if (ret > 0) {
+			if (ret >= 0) {
 				pos += ret;
 				if (pos == state->message_len) {
 					if (state->channel == SSS) {
@@ -543,15 +545,17 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 						state->message_len = 0;
 					} else {
 						state->status = DONE;
+						succeeded = true;
 					}
 					break;
 				}
+			} else {
+				mbedtls_printf("mbedtls_ssl_write returned -%#06x", (unsigned int) -ret);
+				dtls_print_error(ret);
+				state->status = DONE;
+				succeeded = false;
+				break;
 			}
-		} while (ret > 0);
-		if (ret < 0 && ret != MBEDTLS_ERR_SSL_WANT_READ) {
-			mbedtls_printf("mbedtls_ssl_write returned -%#06x", (unsigned int) -ret);
-			dtls_print_error(ret);
-			state->status = DONE;
 		}
 	} else if (state->status == READ) {
 		do {
@@ -562,6 +566,7 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 					scewl_sss_msg_t *msg = (scewl_sss_msg_t *) state->message;
 					if (state->message_len - sizeof(scewl_sss_msg_t) >= msg->ca_len + msg->crt_len + msg->key_len) {
 						state->status = DONE;
+						succeeded = true;
 						break;
 					}
 				}
@@ -574,15 +579,18 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 				case MBEDTLS_ERR_SSL_TIMEOUT:
 					mbedtls_printf("timeout");
 					state->status = DONE;
+					succeeded = false;
 					break;
 				case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
 					mbedtls_printf("session was closed gracefully");
 					state->status = DONE;
+					succeeded = false;
 					break;
 				default:
 					mbedtls_printf("mbedtls_ssl_read returned -%#06x", (unsigned int) -ret);
 					dtls_print_error(ret);
 					state->status = DONE;
+					succeeded = false;
 			}
 		}
 	}
@@ -592,10 +600,18 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 		mbedtls_ssl_close_notify(&state->ssl);
 		mbedtls_printf("done");
 		if (state->channel == SCEWL) {
-			mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->server_scewl_id, state->message_len, state->message);
+			if (succeeded) {
+				mbedtls_printf("Sent message to server %u: %.*s", (unsigned int) state->server_scewl_id, state->message_len, state->message);
+			} else {
+				mbedtls_printf("Failed to send message to server %u: %.*s", (unsigned int) state->server_scewl_id, state->message_len, state->message);
+			}
 		} else if (state->channel == SSS) {
-			mbedtls_printf("Received response.");
-			handle_sss_recv(dtls_state, state->message, state->message_len);
+			if (succeeded) {
+				mbedtls_printf("Received response.");
+				handle_sss_recv(dtls_state, state->message, state->message_len);
+			} else {
+				mbedtls_printf("SSS transaction failed.");
+			}
 		}
 	}
 }
