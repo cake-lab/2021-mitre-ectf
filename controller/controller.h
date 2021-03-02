@@ -32,6 +32,25 @@ typedef uint16_t scewl_id_t;
 #endif
 
 
+// Flash interaction definitions
+#define FLASH_FMA_OFFSET_M ((uint32_t)0x0003FFFF)
+#define FLASH_FMC_WRKEY    ((uint32_t)0xA4420000)
+#define FLASH_FMC_ERASE_M  ((uint32_t)0x00000002)
+#define FLASH_FMC_WRITE_M  ((uint32_t)0x00000001)
+
+#define PAGE_SIZE         (1024)
+#define FLASH_END         ((uint32_t)0x00040000)
+#define WORDS_PER_BUF     (((SCEWL_MAX_DATA_SZ-1)/4)+1)
+#define PAGES_PER_BUF     (((SCEWL_MAX_DATA_SZ-1)/PAGE_SIZE)+1) // Round up
+#define DTLS_BACKUP_START (FLASH_END-(PAGES_PER_BUF*1))
+#define SCUM_BACKUP_START (FLASH_END-(PAGES_PER_BUF*2))
+
+enum proto_type {
+  DTLS,
+  SCUM
+};
+
+
 // SCEWL bus channel header
 // NOTE: This is the required format to comply with Section 4.6 of the rules
 typedef struct scewl_hdr_t {
@@ -50,6 +69,11 @@ typedef struct scewl_sss_msg_t {
   uint16_t ca_len;
   uint16_t crt_len;
   uint16_t key_len;
+  uint16_t sync_key_len;
+  uint16_t sync_salt_len;
+  uint16_t data_key_len;
+  uint16_t data_salt_len;
+  uint16_t sync_len;
   /* data follows */
 } scewl_sss_msg_t;
 

@@ -12,7 +12,15 @@
  */
 
 #include "mbedtls/hmac_drbg.h"
-#include <stddef.h>
+#include "controller.h"
+
+/*
+ * Definitions
+ */
+
+#define POOL_SIZE 192
+#define SEED_WIDTH 32
+#define MAX_CALLS (POOL_SIZE/48)*2
 
 /*
  * Function Prototypes

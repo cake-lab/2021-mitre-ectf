@@ -44,6 +44,8 @@ LDFLAGS+=${COMPILER}/sed_rand.o
 all: ${COMPILER}/sed_rand.o
 LDFLAGS+=${COMPILER}/timers.o
 all: ${COMPILER}/timers.o
+LDFLAGS+=${COMPILER}/broadcast.o
+all: ${COMPILER}/broadcast.o
 LDFLAGS+=${COMPILER}/dtls.o
 all: ${COMPILER}/dtls.o
 
@@ -80,6 +82,7 @@ LDFLAGS+=${COMPILER}/cipher_wrap.o
 LDFLAGS+=${COMPILER}/debug.o
 LDFLAGS+=${COMPILER}/des.o
 LDFLAGS+=${COMPILER}/error.o
+LDFLAGS+=${COMPILER}/gcm.o
 LDFLAGS+=${COMPILER}/hmac_drbg.o
 LDFLAGS+=${COMPILER}/md.o
 LDFLAGS+=${COMPILER}/md5.o
@@ -117,6 +120,7 @@ all: ${COMPILER}/ctr_drbg.o
 all: ${COMPILER}/debug.o
 all: ${COMPILER}/des.o
 all: ${COMPILER}/error.o
+all: ${COMPILER}/gcm.o
 all: ${COMPILER}/hmac_drbg.o
 all: ${COMPILER}/md.o
 all: ${COMPILER}/md5.o

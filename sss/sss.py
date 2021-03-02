@@ -12,6 +12,7 @@
 
 from contextlib import suppress
 from datetime import datetime, timedelta
+from secrets import token_bytes
 import socket
 import select
 import struct
@@ -27,6 +28,9 @@ SSS_IP = 'localhost'
 SSS_ID = 1
 SCEWL_MTU = 1000
 MAX_FRAG_LENGTH = 935
+
+SCUM_KEY_LENGTH = 32
+SCUM_SALT_LENGTH = 12
 
 # mirroring scewl enum at scewl.c:4
 BAD_REQUEST, REG, DEREG = -1, 0, 1
@@ -215,11 +219,24 @@ class Device:
 		ca_der = self.sss.runtime_ca_cert.export(format="DER")
 		crt_der = self.runtime_cert.export(format="DER")
 		pk_der = key.export_key(format="DER")
-		return struct.pack('<HhHHH', self.addr, REG, len(ca_der), len(crt_der), len(pk_der)) + ca_der + crt_der + pk_der
+
+		sync_key = sss.scum_sync_key
+		sync_salt = sss.scum_sync_salt
+		data_key = sss.scum_data_key
+		data_salt = sss.scum_data_salt
+
+		first_sed = b'\x01' if (sss.reg_count == 0) else b'\x00'
+		sss.reg_count += 1
+
+		# SCUM keys/salts/sync indicator have fixed length
+		return struct.pack('<HhHHHHHHHH', self.addr, REG, len(ca_der), len(crt_der), len(pk_der), \
+											len(sync_key), len(sync_salt), len(data_key), len(data_salt), len(first_sed)) \
+										+ ca_der + crt_der + pk_der + sync_key + sync_salt + data_key + data_salt + first_sed
 
 	def deregister(self):
 		self.runtime_cert = None
-		return struct.pack('<HhHHH', self.addr, DEREG, 0, 0, 0)
+		sss.reg_count -= 1
+		return struct.pack('<HhHHHHHHHH', self.addr, DEREG, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 class SSS:
@@ -260,6 +277,15 @@ class SSS:
 		)
 		tls._set_debug_level(DEBUG_LEVEL)
 		tls._enable_debug_output(self.dtls_conf)
+
+		# Generate SCUM keys
+		self.scum_data_key = token_bytes(SCUM_KEY_LENGTH)
+		self.scum_data_salt = token_bytes(SCUM_SALT_LENGTH)
+		self.scum_sync_key = token_bytes(SCUM_KEY_LENGTH)
+		self.scum_sync_salt = token_bytes(SCUM_SALT_LENGTH)
+
+		# Registered device count
+		self.reg_count = 0
 
 		# Socket
 		self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

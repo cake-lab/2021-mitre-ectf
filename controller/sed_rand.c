@@ -10,8 +10,6 @@
 #include "mbedtls/entropy.h"
 #include "mbedtls/hmac_drbg.h"
 
-// Definitions
-#define SEED_WIDTH 32
 
 /*
  * Configure an HMAC_DRBG instance for appropriate NIST-compliant random generation
@@ -54,26 +52,16 @@ int sed_seed_request(void *in_data, unsigned char *output, size_t req_len)
   static int req_count = 0;
   static int rd_addr = 0;
 
+  // Only perfom as many reseeds are there are seeds available
+  if (req_count >= MAX_CALLS) {
+    return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+  }
+
   // First request should be full length, second request should be half length
-  switch (req_count){
-    case 0:
-      if (req_len != SEED_WIDTH)
-        return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
-      break;
-    case 1:
-      if (req_len != SEED_WIDTH/2)
-        return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
-      break;
-    case 2:
-      if (req_len != SEED_WIDTH)
-        return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
-      break;
-    case 3:
-      if (req_len != SEED_WIDTH/2)
-        return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
-      break;
-    default:
-      return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+  if (((req_count % 2) == 0) && (req_len != SEED_WIDTH)) {
+    return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+  } else if (((req_count % 2) == 1) && (req_len != SEED_WIDTH/2)) {
+    return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
   }
 
   // Copy the bytes
