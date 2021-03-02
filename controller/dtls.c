@@ -381,8 +381,8 @@ static int dtls_client_ssl_recv(void *ctx, unsigned char *buf, size_t len) {
  * Prepare the server for a connection from a client.
  */
 static void dtls_server_startup(struct dtls_state *dtls_state, struct dtls_server_state *server_state) {
-	int ret, len;
-	char buf[6];
+	int ret, scewl_id_str_len;
+	char scewl_id_str[6];
 
 	ret = mbedtls_ssl_session_reset(&server_state->ssl);
 	if (ret != 0) {
@@ -391,10 +391,18 @@ static void dtls_server_startup(struct dtls_state *dtls_state, struct dtls_serve
 		return;
 	}
 
+	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) server_state->client_scewl_id);
+
+	ret = mbedtls_ssl_set_hostname(&server_state->ssl, scewl_id_str);
+	if (ret != 0) {
+		mbedtls_printf("failed! mbedtls_ssl_set_hostname returned -%#06x", (unsigned int) -ret);
+		dtls_fatal_error(dtls_state, ret);
+		return;
+	}
+
 	/* For HelloVerifyRequest cookies */
 #ifdef MBEDTLS_SSL_DTLS_HELLO_VERIFY
-	len = mbedtls_snprintf(buf, 6, "%u", (unsigned int) server_state->client_scewl_id);
-	ret = mbedtls_ssl_set_client_transport_id(&server_state->ssl, (unsigned char *) buf, len);
+	ret = mbedtls_ssl_set_client_transport_id(&server_state->ssl, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_set_client_transport_id returned -%#06x", (unsigned int) -ret);
 		dtls_fatal_error(dtls_state, ret);
@@ -423,6 +431,7 @@ static void dtls_server_feed(struct dtls_server_state *server_state, char *data,
  */
 static void dtls_client_startup(struct dtls_state *dtls_state, struct dtls_client_state *client_state, char *message, size_t message_len) {
 	int ret;
+	char scewl_id_str[6];
 
 	ret = mbedtls_ssl_session_reset(&client_state->ssl);
 	if (ret != 0) {
@@ -430,7 +439,13 @@ static void dtls_client_startup(struct dtls_state *dtls_state, struct dtls_clien
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
-
+	mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) client_state->server_scewl_id);
+	ret = mbedtls_ssl_set_hostname(&client_state->ssl, scewl_id_str);
+	if (ret != 0) {
+		mbedtls_printf("failed! mbedtls_ssl_set_hostname returned -%#06x", (unsigned int) -ret);
+		dtls_fatal_error(dtls_state, ret);
+		return;
+	}
 	mbedtls_ssl_set_bio(&client_state->ssl, client_state, dtls_client_ssl_send, dtls_client_ssl_recv, NULL);
 	client_state->data_available = false;
 	client_state->message = message;

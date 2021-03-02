@@ -157,6 +157,7 @@ class Device:
 			self.handshake()
 
 	def handshake(self):
+		self.conn._buffer.context._set_hostname(f'{self.conn.getpeername()}_PROVISION')
 		self.conn.setcookieparam(self.conn.getpeername().encode("ascii"))
 		try:
 			block(self.conn.do_handshake)
@@ -174,6 +175,10 @@ class Device:
 		# Receive request from client
 		data = block(self.conn.recv, 4)
 		dev_id, op = struct.unpack('<Hh', data)
+
+		if dev_id != self.addr:
+			logging.warn(f'Client {self.addr} sent request with dev_id {dev_id}. This is not allowed.')
+			return
 
 		# Process request
 		resp = struct.pack('<HhHHH', self.addr, BAD_REQUEST, 0, 0, 0)
