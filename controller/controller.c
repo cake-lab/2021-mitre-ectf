@@ -28,10 +28,61 @@ int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
 #define BLOCK_SIZE 16
 #define MAX_PRINTF_LENGTH 1000
 
+
+// Globals
 static struct scum_ctx *scum_ctx_ref;
 char *cpu_buf_ref;
 char *scewl_buf_ref;
 static bool registered;
+
+
+// Backup SCEWL_MAX_DATA_SZ-sized buffer to the end of flash
+// Each protocol has its own dedicated segment
+void backup_buf(char *buf, enum proto_type type)
+{
+  uint32_t start_address;
+  
+  if (type == DTLS) {
+    start_address = DTLS_BACKUP_START;
+  } else {
+    start_address = SCUM_BACKUP_START;
+  }
+
+  // Erase all subsequent pages
+  for (uint32_t i = 0; i < PAGES_PER_BUF; i++) {
+    FLASH_CTRL->FMA &= ~(FLASH_FMA_OFFSET_M); // Clear address field
+    FLASH_CTRL->FMA |= (start_address + (i*PAGE_SIZE)); // Write address field
+    FLASH_CTRL->FMC |= (FLASH_FMC_WRKEY | FLASH_FMC_ERASE_M); // Start erase
+    while (FLASH_CTRL->FMC & FLASH_FMC_ERASE_M); // Wait until erase bit is 0
+  }
+
+  // Write 32-bit words
+  for (uint32_t i = 0; i < WORDS_PER_BUF; i++) {
+    FLASH_CTRL->FMA &= ~(FLASH_FMA_OFFSET_M); // Clear address field
+    FLASH_CTRL->FMA |= (start_address + (i*4)); // Write address field
+    FLASH_CTRL->FMD = *((uint32_t *)(buf+i*4)); // Write 32 bits
+    FLASH_CTRL->FMC |= (FLASH_FMC_WRKEY | FLASH_FMC_WRITE_M); // Start write
+    while (FLASH_CTRL->FMC & FLASH_FMC_WRITE_M); // Wait until write bit is 0
+  }
+}
+
+// Restore SCEWL_MAX_DATA_SZ-sized buffer from the end of flash
+// Each protocol has its own dedicated segment
+void restore_buf(char *buf, enum proto_type type)
+{
+  uint32_t start_address;
+  
+  if (type == DTLS) {
+    start_address = DTLS_BACKUP_START;
+  } else {
+    start_address = SCUM_BACKUP_START;
+  }
+
+  // Copy 32-bit words
+  for (uint32_t i = 0; i < WORDS_PER_BUF; i++) {
+    *((uint32_t *)(buf+i*4)) = *((uint32_t *)(start_address+i*4));
+  }
+}
 
 
 int read_msg(intf_t *intf, char *data, scewl_id_t *src_id, scewl_id_t *tgt_id,
@@ -237,74 +288,6 @@ void _putchar(char character) {
 void mbedtls_platform_zeroize(void *buf, size_t len) {
   memset(buf, 0, len);
 }
-
-
-
-
-
-#define FLASH_FMA_OFFSET_M ((uint32_t)0x0003FFFF)
-#define FLASH_FMC_WRKEY    ((uint32_t)0xA4420000)
-#define FLASH_FMC_ERASE_M  ((uint32_t)0x00000002)
-#define FLASH_FMC_WRITE_M  ((uint32_t)0x00000001)
-
-#define PAGE_SIZE         (1024)
-#define FLASH_END         ((uint32_t)0x00040000)
-#define WORDS_PER_BUF     (((SCEWL_MAX_DATA_SZ-1)/4)+1)
-#define PAGES_PER_BUF     (((SCEWL_MAX_DATA_SZ-1)/PAGE_SIZE)+1) // Round up
-#define DTLS_BACKUP_START (FLASH_END-(PAGES_PER_BUF*1))
-#define SCUM_BACKUP_START (FLASH_END-(PAGES_PER_BUF*2))
-
-enum proto_type {
-  DTLS,
-  SCUM
-};
-
-// Backup SCEWL_MAX_DATA_SZ-sized buffer to the end of flash
-void backup_buf(char *buf, enum proto_type type)
-{
-  uint32_t start_address;
-  
-  if (type == DTLS) {
-    start_address = DTLS_BACKUP_START;
-  } else {
-    start_address = SCUM_BACKUP_START;
-  }
-
-  // Erase all subsequent pages
-  for (uint32_t i = 0; i < PAGES_PER_BUF; i++) {
-    FLASH_CTRL->FMA &= ~(FLASH_FMA_OFFSET_M); // Clear address field
-    FLASH_CTRL->FMA |= (start_address + (i*PAGE_SIZE)); // Write address field
-    FLASH_CTRL->FMC |= (FLASH_FMC_WRKEY | FLASH_FMC_ERASE_M); // Start erase
-    while (FLASH_CTRL->FMC & FLASH_FMC_ERASE_M); // Wait until erase bit is 0
-  }
-
-  // Write 32-bit words
-  for (uint32_t i = 0; i < WORDS_PER_BUF; i++) {
-    FLASH_CTRL->FMA &= ~(FLASH_FMA_OFFSET_M); // Clear address field
-    FLASH_CTRL->FMA |= (start_address + (i*4)); // Write address field
-    FLASH_CTRL->FMD = *((uint32_t *)(buf+i*4)); // Write 32 bits
-    FLASH_CTRL->FMC |= (FLASH_FMC_WRKEY | FLASH_FMC_WRITE_M); // Start write
-    while (FLASH_CTRL->FMC & FLASH_FMC_WRITE_M); // Wait until write bit is 0
-  }
-}
-
-void restore_buf(char *buf, enum proto_type type)
-{
-  uint32_t start_address;
-  
-  if (type == DTLS) {
-    start_address = DTLS_BACKUP_START;
-  } else {
-    start_address = SCUM_BACKUP_START;
-  }
-
-  // Copy 32-bit words
-  for (uint32_t i = 0; i < WORDS_PER_BUF; i++) {
-    *((uint32_t *)(buf+i*4)) = *((uint32_t *)(start_address+i*4));
-  }
-}
-
-
 
 /*
  * Macro for complicated CPU buf read condition
