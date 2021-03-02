@@ -217,7 +217,7 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
       if (!illegal_len) {
         // forward message to CPU -- clear data except for device ID and op
         const uint16_t cpu_required_len = sizeof(msg->dev_id) + sizeof(msg->op);
-        memset(data+cpu_required_len, 0, len - cpu_required_len);
+        memset((unsigned char *)data+cpu_required_len, 0, len - cpu_required_len);
         send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, cpu_required_len, data);
         return;
       }
