@@ -51,6 +51,9 @@
 #define MBEDTLS_PLATFORM_MEMORY
 #define MBEDTLS_MEMORY_BUFFER_ALLOC_C
 
+/* Cipher feature support */
+#define MBEDTLS_AES_ROM_TABLES
+
 /* mbed TLS feature support */
 #define MBEDTLS_CIPHER_MODE_CBC
 #define MBEDTLS_PKCS1_V15
@@ -67,6 +70,7 @@
 #define MBEDTLS_ASN1_WRITE_C
 #define MBEDTLS_BIGNUM_C
 #define MBEDTLS_CIPHER_C
+#define MBEDTLS_GCM_C
 #define MBEDTLS_HMAC_DRBG_C
 #define MBEDTLS_DES_C
 #define MBEDTLS_MD_C

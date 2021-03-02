@@ -71,7 +71,7 @@ RUN echo "" >> /secrets/${SCEWL_ID}/sed_secrets.c
 
 
 # Create seed pool for SED
-ARG RAND_BYTES=96
+ARG RAND_BYTES=192
 
 # Generate seed and add to file
 RUN python3 -c \
