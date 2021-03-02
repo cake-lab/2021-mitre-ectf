@@ -215,17 +215,23 @@ class Device:
 		crt_der = self.runtime_cert.export(format="DER")
 		pk_der = key.export_key(format="DER")
 
+		sync_key = sss.scum_sync_key
+		sync_salt = sss.scum_sync_salt
+		data_key = sss.scum_data_key
+		data_salt = sss.scum_data_salt
+
 		first_sed = b'\x01' if (sss.reg_count == 0) else b'\x00'
 		sss.reg_count += 1
 
 		# SCUM keys/salts/sync indicator have fixed length
-		return struct.pack('<HhHHH', self.addr, REG, len(ca_der), len(crt_der), len(pk_der)) \
-										+ ca_der + crt_der + pk_der + sss.scum_sync_key + sss.scum_sync_salt + sss.scum_data_key + sss.scum_data_salt + first_sed
+		return struct.pack('<HhHHHHHHHH', self.addr, REG, len(ca_der), len(crt_der), len(pk_der), \
+											len(sync_key), len(sync_salt), len(data_key), len(data_salt), len(first_sed)) \
+										+ ca_der + crt_der + pk_der + sync_key + sync_salt + data_key + data_salt + first_sed
 
 	def deregister(self):
 		self.runtime_cert = None
 		sss.reg_count -= 1
-		return struct.pack('<HhHHH', self.addr, DEREG, 0, 0, 0)
+		return struct.pack('<HhHHHHHHHH', self.addr, DEREG, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 class SSS:

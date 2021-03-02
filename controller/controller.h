@@ -69,6 +69,11 @@ typedef struct scewl_sss_msg_t {
   uint16_t ca_len;
   uint16_t crt_len;
   uint16_t key_len;
+  uint16_t sync_key_len;
+  uint16_t sync_salt_len;
+  uint16_t data_key_len;
+  uint16_t data_salt_len;
+  uint16_t sync_len;
   /* data follows */
 } scewl_sss_msg_t;
 

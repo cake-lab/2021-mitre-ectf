@@ -167,12 +167,20 @@ int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, c
 void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len) {
   scewl_sss_msg_t *msg;
   const unsigned char *ca, *crt, *key, *sync_key, *sync_salt, *data_key, *data_salt, *first_sed;
+  uint8_t illegal_len = 0;
 
   if (len >= sizeof(scewl_sss_msg_t)) {
     msg = (scewl_sss_msg_t *) data;
-    if (msg->ca_len + msg->crt_len + msg->key_len + S_KEY_LEN*2 + S_SALT_LEN*2 + 1 == len - sizeof(scewl_sss_msg_t)) {
+    if (msg->ca_len + msg->crt_len + msg->key_len + msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len == len - sizeof(scewl_sss_msg_t)) {
       switch (msg->op) {
         case SCEWL_SSS_REG:
+
+          // Check for correct SCUM data length
+          if (msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len != S_KEY_LEN*2 + S_SALT_LEN*2 + 1) {
+            illegal_len = 1;
+            break;
+          }
+
           ca = (const unsigned char *) data + sizeof(scewl_sss_msg_t);
           crt = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len;
           key = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len + msg->crt_len;
@@ -206,9 +214,13 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
         default:
           mbedtls_printf("Received response from SSS with invalid status.");
       }
-      // forward message to CPU
-      send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, len, data);
-      return;
+      if (!illegal_len) {
+        // forward message to CPU -- clear data except for device ID and op
+        const uint16_t cpu_required_len = sizeof(msg->dev_id) + sizeof(msg->op);
+        memset(data+cpu_required_len, 0, len - cpu_required_len);
+        send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, cpu_required_len, data);
+        return;
+      }
     }
   }
   mbedtls_printf("Received invalid response from SSS.");
