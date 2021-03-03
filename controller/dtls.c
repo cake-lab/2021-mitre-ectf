@@ -14,6 +14,7 @@
 #define HS_TIMEOUT_MS_MIN 7000
 #define HS_TIMEOUT_MS_MAX 60000
 #define SCEWL_MTU 1000
+#define DTLS_OVERHEAD 77 //65 for DTLS 1.0
 
 
 /*
@@ -551,7 +552,7 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 		pos = 0;
 		while (true) {
 			ret = mbedtls_ssl_write(&state->ssl, (unsigned char *) &state->message[pos],
-				state->message_len - pos <= SCEWL_MTU - 65 ? state->message_len - pos : SCEWL_MTU - 65);
+				state->message_len - pos <= SCEWL_MTU - DTLS_OVERHEAD ? state->message_len - pos : SCEWL_MTU - DTLS_OVERHEAD);
 			if (ret >= 0) {
 				pos += ret;
 				if (pos == state->message_len) {
@@ -580,7 +581,8 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 				state->message_len += ret;
 				if (state->message_len >= sizeof(scewl_sss_msg_t)) {
 					scewl_sss_msg_t *msg = (scewl_sss_msg_t *) state->message;
-					if (state->message_len - sizeof(scewl_sss_msg_t) >= msg->ca_len + msg->crt_len + msg->key_len) {
+					if (state->message_len - sizeof(scewl_sss_msg_t) >= msg->ca_len + msg->crt_len + msg->key_len +
+							msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len) {
 						state->status = DONE;
 						succeeded = true;
 						break;

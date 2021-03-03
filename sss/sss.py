@@ -27,7 +27,8 @@ from mbedtls.exceptions import TLSError
 SSS_IP = 'localhost'
 SSS_ID = 1
 SCEWL_MTU = 1000
-MAX_FRAG_LENGTH = 935
+DTLS_OVERHEAD = 77 #65 for DTLS 1.0
+MAX_FRAG_LENGTH = SCEWL_MTU - DTLS_OVERHEAD
 
 SCUM_KEY_LENGTH = 32
 SCUM_SALT_LENGTH = 12
@@ -166,6 +167,7 @@ class Device:
 		try:
 			block(self.conn.do_handshake)
 			logging.debug(f'Finished handshake with {self.conn.getpeername()}.')
+			logging.info(f'Negotiated_tls_version: {self.conn.negotiated_tls_version()}')
 			self.handshake_complete = True
 		except tls.HelloVerifyRequest:
 			logging.debug(f'Hello verification requested.')
