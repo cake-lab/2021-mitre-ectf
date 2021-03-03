@@ -90,7 +90,7 @@ int main(void) {
   }
 
   for (i = 0; i < 2; i++) {
-    fprintf(log, "Sending message...\n");
+    fprintf(log, "Sending unicast message...\n");
     scewl_send(TGT_ID, strlen(messages[i]) + 1, messages[i]);
 
     // receive response (block until response received)
@@ -99,9 +99,24 @@ int main(void) {
 
     // check if response matches
     if (!strcmp(messages[i], data)) {
-      fprintf(log, "Success!\n");
+      fprintf(log, "Unicast %d successful.\n", i);
     } else {
-      fprintf(log, "Bad response!\n");
+      fprintf(log, "Unicast %d failed: bad response!\n", i);
+      failure = true;
+    }
+
+    fprintf(log, "Sending broadcast message...\n");
+    scewl_brdcst(strlen(messages[i]) + 1, messages[i]);
+
+    // receive response (block until response received)
+    fprintf(log, "Waiting for response...\n");
+    scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
+
+    // check if response matches
+    if (!strcmp(messages[i], data)) {
+      fprintf(log, "Broadcast %d successful.\n", i);
+    } else {
+      fprintf(log, "Broadcast %d failed: bad response!\n", i);
       failure = true;
     }
   }
