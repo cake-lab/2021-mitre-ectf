@@ -25,7 +25,6 @@ int snprintf_(char *buffer, size_t count, const char *format, ...);
 int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
 
 #define send_str(M) send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, strlen(M), M)
-#define BLOCK_SIZE 16
 #define MAX_PRINTF_LENGTH 1000
 
 
