@@ -84,7 +84,7 @@ array = ''.join(map(lambda i: '0x' + i + ',', a)); \
 array = '{' + array + '}'; \
 array = array[0:len(array)-2]; \
 array = array + '}'; \
-array = 'const unsigned char seed_pool[] = ' + array + ';'; \
+array = 'const unsigned char initial_seed_pool[] = ' + array + ';'; \
 print(array) \
 " $RAND_BYTES >> /secrets/${SCEWL_ID}/sed_secrets.c
 
@@ -104,7 +104,7 @@ RUN echo "" >> /secrets/${SCEWL_ID}/sed_secrets.h
 RUN echo "extern const char provision_ca[];" >> /secrets/${SCEWL_ID}/sed_secrets.h
 RUN echo "extern const char sed_provision_crt[];" >> /secrets/${SCEWL_ID}/sed_secrets.h
 RUN echo "extern const char sed_provision_key[];" >> /secrets/${SCEWL_ID}/sed_secrets.h
-RUN echo "extern const unsigned char seed_pool[];" >> /secrets/${SCEWL_ID}/sed_secrets.h
+RUN echo "extern const unsigned char initial_seed_pool[];" >> /secrets/${SCEWL_ID}/sed_secrets.h
 RUN echo "" >> /secrets/${SCEWL_ID}/sed_secrets.h
 
 # End guard

@@ -10,11 +10,30 @@
 #include "mbedtls/entropy.h"
 #include "mbedtls/hmac_drbg.h"
 
+/*
+ * Globals
+ */
+static unsigned char runtime_seed_pool[ENTROPY_POOL_SIZE];
+static unsigned char *pool_ptr = (unsigned char *)initial_seed_pool;
+static int req_count = 0;
+static int rd_addr = 0;
+
+
+/*
+ * Copy runtime seed pool
+ */
+void rng_load_runtime_pool(unsigned char *pool, int len) {
+  if (len != ENTROPY_POOL_SIZE) {
+    mbedtls_printf("Incorrect pool size provided");
+    return;
+  }
+  memcpy(runtime_seed_pool, pool, len);
+}
 
 /*
  * Configure an HMAC_DRBG instance for appropriate NIST-compliant random generation
  */
-int rng_module_setup(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len)
+int rng_setup(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len)
 {
   int ret;
 
@@ -41,6 +60,27 @@ int rng_module_setup(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_s
   return ret;
 }
 
+/*
+ * Switch to runtime source
+ */
+int rng_setup_runtime_pool(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len)
+{
+  pool_ptr = runtime_seed_pool;
+  req_count = 0;
+  rd_addr = 0;
+  return rng_setup(hmac_drbg, pers_str, pers_len);
+}
+
+/*
+ * Switch to built-in provision source
+ */
+int rng_setup_initial_pool(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len)
+{
+  pool_ptr = (unsigned char *)initial_seed_pool;
+  req_count = 0;
+  rd_addr = 0;
+  return rng_setup(hmac_drbg, pers_str, pers_len);
+}
 
 /*
  * Seed function that checks for appropriate use by HMAC_DRBG
@@ -49,12 +89,11 @@ int rng_module_setup(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_s
 int sed_seed_request(void *in_data, unsigned char *output, size_t req_len)
 {
   int i;
-  static int req_count = 0;
-  static int rd_addr = 0;
 
   // Only perfom as many reseeds are there are seeds available
   if (req_count >= MAX_CALLS) {
-    return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+    mbedtls_printf("Entropy has run out for an HMAC_DRBG instance");
+    while (1);
   }
 
   // First request should be full length, second request should be half length
@@ -66,7 +105,7 @@ int sed_seed_request(void *in_data, unsigned char *output, size_t req_len)
 
   // Copy the bytes
   for (i = 0; i < req_len; i++){
-    *(output+i) = seed_pool[rd_addr++];
+    *(output+i) = pool_ptr[rd_addr++];
   }
 
   req_count++;

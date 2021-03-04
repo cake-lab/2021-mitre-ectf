@@ -30,6 +30,8 @@ SCEWL_MTU = 1000
 DTLS_OVERHEAD = 77 #65 for DTLS 1.0
 MAX_FRAG_LENGTH = SCEWL_MTU - DTLS_OVERHEAD
 
+ENTROPY_POOL_SIZE = 192
+
 SCUM_KEY_LENGTH = 32
 SCUM_SALT_LENGTH = 12
 
@@ -227,18 +229,20 @@ class Device:
 		data_key = sss.scum_data_key
 		data_salt = sss.scum_data_salt
 
+		entropy = token_bytes(ENTROPY_POOL_SIZE)
+
 		first_sed = b'\x01' if (sss.reg_count == 0) else b'\x00'
 		sss.reg_count += 1
 
 		# SCUM keys/salts/sync indicator have fixed length
-		return struct.pack('<HhHHHHHHHH', self.addr, REG, len(ca_der), len(crt_der), len(pk_der), \
-											len(sync_key), len(sync_salt), len(data_key), len(data_salt), len(first_sed)) \
-										+ ca_der + crt_der + pk_der + sync_key + sync_salt + data_key + data_salt + first_sed
+		return struct.pack('<HhHHHHHHHHH', self.addr, REG, len(ca_der), len(crt_der), len(pk_der), \
+											len(sync_key), len(sync_salt), len(data_key), len(data_salt), len(first_sed), len(entropy)) \
+										+ ca_der + crt_der + pk_der + sync_key + sync_salt + data_key + data_salt + first_sed + entropy
 
 	def deregister(self):
 		self.runtime_cert = None
 		sss.reg_count -= 1
-		return struct.pack('<HhHHHHHHHH', self.addr, DEREG, 0, 0, 0, 0, 0, 0, 0, 0)
+		return struct.pack('<HhHHHHHHHHH', self.addr, DEREG, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 class SSS:

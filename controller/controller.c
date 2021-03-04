@@ -31,6 +31,7 @@ int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
 
 // Globals
 static struct scum_ctx *scum_ctx_ref;
+mbedtls_hmac_drbg_context *aes_hmac_drbg_ref;
 char *cpu_buf_ref;
 char *scewl_buf_ref;
 static bool registered;
@@ -166,17 +167,17 @@ int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, c
 
 void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len) {
   scewl_sss_msg_t *msg;
-  const unsigned char *ca, *crt, *key, *sync_key, *sync_salt, *data_key, *data_salt, *first_sed;
+  const unsigned char *ca, *crt, *key, *sync_key, *sync_salt, *data_key, *data_salt, *first_sed, *entropy;
   uint8_t illegal_len = 0;
 
   if (len >= sizeof(scewl_sss_msg_t)) {
     msg = (scewl_sss_msg_t *) data;
-    if (msg->ca_len + msg->crt_len + msg->key_len + msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len == len - sizeof(scewl_sss_msg_t)) {
+    if (msg->ca_len + msg->crt_len + msg->key_len + msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len == len - sizeof(scewl_sss_msg_t)) {
       switch (msg->op) {
         case SCEWL_SSS_REG:
 
           // Check for correct SCUM data length
-          if (msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len != S_KEY_LEN*2 + S_SALT_LEN*2 + 1) {
+          if (msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len != S_KEY_LEN*2 + S_SALT_LEN*2 + 1 + ENTROPY_POOL_SIZE) {
             illegal_len = 1;
             break;
           }
@@ -189,10 +190,16 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
           data_key = (const unsigned char *) sync_key + S_KEY_LEN + S_SALT_LEN;
           data_salt = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN;
           first_sed = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN*2;
+          entropy = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN*2 + 1;
 
           dtls_rekey(dtls_state, ca, msg->ca_len, crt, msg->crt_len, key, msg->key_len, true, true);
           registered = true;
           mbedtls_printf("Registered.");
+
+          // Setup runtime RNG state -- happens by default in SCUM
+          rng_load_runtime_pool((unsigned char *)entropy, msg->entropy_len);
+          dtls_config_runtime_rng(dtls_state);
+          Masked_AES_RNG_Setup(aes_hmac_drbg_ref, 1/*runtime*/);
 
           scum_setup(scum_ctx_ref,
                    (char *)sync_key, (char *)sync_salt,
@@ -325,17 +332,17 @@ int main() {
   char cpu_buf[SCEWL_MAX_DATA_SZ];
   char scewl_buf[1000];
   struct scum_ctx scum_ctx;
+  // RNG for masked AES
+  mbedtls_hmac_drbg_context aes_hmac_drbg;
 
   // Backup status
   unsigned char scum_backed_up = 0, dtls_backed_up = 0;
 
-  // Set global SCUM refs
+  // Set global refs
+  aes_hmac_drbg_ref = &aes_hmac_drbg;
   scum_ctx_ref = &scum_ctx;
   cpu_buf_ref = cpu_buf;
   scewl_buf_ref = scewl_buf;
-
-  // RNG for masked AES
-  mbedtls_hmac_drbg_context aes_hmac_drbg;
 
   // initialize interfaces
   intf_init(CPU_INTF);
@@ -362,7 +369,7 @@ int main() {
   mbedtls_printf("Hello, world! This is from main.");
 
   // Set up mask generation
-  if (Masked_AES_RNG_Setup(&aes_hmac_drbg) != 0) {
+  if (Masked_AES_RNG_Setup(&aes_hmac_drbg, 0/*initial*/) != 0) {
     mbedtls_printf("Error setting up masked AES rng. Entering death loop.");
     while (1);
   }

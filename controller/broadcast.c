@@ -222,7 +222,7 @@ static int scum_sync_setup(struct scum_sync_session *session, char *key, char *s
   session->rad_buf = rad_buf;
 
   // Initialize cryptographic primitives
-  rng_module_setup(&session->rng, NULL, 0);
+  rng_setup_runtime_pool(&session->rng, NULL, 0);
 
   // Set up crypto context
   ret = scum_crypto_setup(&session->crypto, key, salt, 0);

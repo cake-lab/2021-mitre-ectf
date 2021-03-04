@@ -269,6 +269,25 @@ void dtls_rekey_to_default(struct dtls_state *state, bool free_existing, bool ve
 }
 
 /*
+ * Switch to runtime RNG entropy source
+ */
+void dtls_config_runtime_rng(struct dtls_state *state) {
+	int ret;
+	char scewl_id_str[6];
+	int scewl_id_str_len;
+
+	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
+
+	mbedtls_hmac_drbg_init(&state->hmac_drbg);
+	ret = rng_setup_runtime_pool(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
+	if(ret != 0) {
+		dtls_fatal_error(state, ret);
+		return;
+	}
+}
+
+
+/*
  * Initialize things that are common to the DTLS server and client.
  * This is called once.
  */
@@ -299,7 +318,7 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 	/*
 	 * Set up RNG
 	 */
-	ret = rng_module_setup(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
+	ret = rng_setup_initial_pool(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if(ret != 0) {
 		dtls_fatal_error(state, ret);
 		return;
@@ -582,7 +601,7 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 				if (state->message_len >= sizeof(scewl_sss_msg_t)) {
 					scewl_sss_msg_t *msg = (scewl_sss_msg_t *) state->message;
 					if (state->message_len - sizeof(scewl_sss_msg_t) >= msg->ca_len + msg->crt_len + msg->key_len +
-							msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len) {
+							msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len) {
 						state->status = DONE;
 						succeeded = true;
 						break;

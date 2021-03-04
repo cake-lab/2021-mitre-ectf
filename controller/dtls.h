@@ -109,6 +109,7 @@ void dtls_rekey(struct dtls_state *state,
 	const unsigned char *key, uint16_t key_len,
 	bool free_existing, bool verify_cn);
 void dtls_rekey_to_default(struct dtls_state *state, bool free_existing, bool verify_cn);
+void dtls_config_runtime_rng(struct dtls_state *state);
 void dtls_setup(struct dtls_state *state, char *message_buf);
 void dtls_send_message(struct dtls_state *state, uint16_t dst_id, char *message, size_t message_len);
 void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t message_len);
