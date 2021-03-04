@@ -53,6 +53,7 @@
 
 /* Cipher feature support */
 #define MBEDTLS_AES_ROM_TABLES
+#define MBEDTLS_AES_FEWER_TABLES
 
 /* mbed TLS feature support */
 #define MBEDTLS_CIPHER_MODE_CBC

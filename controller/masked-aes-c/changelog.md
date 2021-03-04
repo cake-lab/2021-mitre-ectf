@@ -13,3 +13,5 @@ Original code downloaded from https://github.com/CENSUS/masked-aes-c
       HMAC_DRBG
         - Will return failure if seeding fails
 - Modifies `Masked` functions to return failure if getting a random number fails
+- Comments out un-masked functions that are not used
+    - `Cipher`, `InvCipher`, `AddRoundKey`, `SubBytes`, `InvSubBytes`

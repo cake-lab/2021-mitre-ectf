@@ -198,7 +198,7 @@ static const unsigned char FSb[256] =
     V(CB,B0,B0,7B), V(FC,54,54,A8), V(D6,BB,BB,6D), V(3A,16,16,2C)
 
 #define V(a,b,c,d) 0x##a##b##c##d
-static const uint32_t FT0[256] = { FT };
+// static const uint32_t FT0[256] = { FT };
 #undef V
 
 #if !defined(MBEDTLS_AES_FEWER_TABLES)
@@ -222,6 +222,7 @@ static const uint32_t FT3[256] = { FT };
 /*
  * Reverse S-box
  */
+/*
 static const unsigned char RSb[256] =
 {
     0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38,
@@ -257,6 +258,7 @@ static const unsigned char RSb[256] =
     0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26,
     0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D
 };
+*/
 
 /*
  * Reverse tables
@@ -329,7 +331,7 @@ static const unsigned char RSb[256] =
     V(61,84,CB,7B), V(70,B6,32,D5), V(74,5C,6C,48), V(42,57,B8,D0)
 
 #define V(a,b,c,d) 0x##a##b##c##d
-static const uint32_t RT0[256] = { RT };
+// static const uint32_t RT0[256] = { RT };
 #undef V
 
 #if !defined(MBEDTLS_AES_FEWER_TABLES)

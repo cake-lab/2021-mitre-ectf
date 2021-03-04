@@ -18,3 +18,6 @@
           by any mode of operation
     - Passes number of rounds to *masked-aes-c* functions to suport different
       key lengths
+    - Comment out definitions of reverse and forward table 0's
+        - Even with `MBEDTLS_AES_ROM_TABLES` and `MBEDTLS_AES_FEWER_TABLES`
+          defined, there are warnings due to the mbedtls AES core not being used

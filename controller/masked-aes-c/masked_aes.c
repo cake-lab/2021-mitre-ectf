@@ -490,6 +490,7 @@ void AES_ctx_set_iv(struct AES_ctx *ctx, const uint8_t *iv)
 
 // This function adds the round key to state.
 // The round key is added to the state by an XOR function.
+/*
 static void AddRoundKey(uint8_t round, state_t *state, const uint8_t *RoundKey)
 {
   uint8_t i, j;
@@ -501,9 +502,11 @@ static void AddRoundKey(uint8_t round, state_t *state, const uint8_t *RoundKey)
     }
   }
 }
+*/
 
 // The SubBytes Function Substitutes the values in the
 // state matrix with values in an S-box.
+/*
 static void SubBytes(state_t *state)
 {
   uint8_t i, j;
@@ -515,6 +518,7 @@ static void SubBytes(state_t *state)
     }
   }
 }
+*/
 
 // The ShiftRows() function shifts the rows in the state to the left.
 // Each row is shifted with different offset.
@@ -623,6 +627,7 @@ static void InvMixColumns(state_t *state)
 
 // The SubBytes Function Substitutes the values in the
 // state matrix with values in an S-box.
+/*
 static void InvSubBytes(state_t *state)
 {
   uint8_t i, j;
@@ -634,6 +639,7 @@ static void InvSubBytes(state_t *state)
     }
   }
 }
+*/
 
 // The SubBytes Function Substitutes the values in the
 // state matrix with values in an S-box.
@@ -733,6 +739,7 @@ int CipherMasked(state_t *state, const uint8_t *RoundKey)
   return 0;
 }
 
+/*
 // Cipher is the main function that encrypts the PlainText.
 static void Cipher(state_t *state, const uint8_t *RoundKey)
 {
@@ -759,6 +766,7 @@ static void Cipher(state_t *state, const uint8_t *RoundKey)
   // Add round key to last round
   AddRoundKey(Nr, state, RoundKey);
 }
+*/
 
 #if (defined(CBC) && CBC == 1) || (defined(ECB) && ECB == 1)
 int InvCipherMasked(state_t *state, const uint8_t *RoundKey)
@@ -809,7 +817,7 @@ int InvCipherMasked(state_t *state, const uint8_t *RoundKey)
 
   return 0;
 }
-
+/*
 static void InvCipher(state_t *state, const uint8_t *RoundKey)
 {
   uint8_t round = 0;
@@ -833,6 +841,7 @@ static void InvCipher(state_t *state, const uint8_t *RoundKey)
     InvMixColumns(state);
   }
 }
+*/
 #endif
 
 /*****************************************************************************/
