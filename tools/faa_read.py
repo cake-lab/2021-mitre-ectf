@@ -5,14 +5,14 @@ import sys
 
 OUTPUT_FILENAME = 'faa.log'
 FAA_SCEWL_ID = 2
-TEST_PREFACE = b'FAA_TEST_MSG: '
+TEST_PREFACE = b'TEST_MSG: '
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.connect(sys.argv[1])
 
 msgs = []
 try:
-	while select.select([sock], [], [], 60)[0]:
+	while select.select([sock], [], [], 240)[0]:
 		# receive and unpack packet header
 		hdr = b''
 		while len(hdr) < 8:
