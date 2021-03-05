@@ -237,15 +237,15 @@ class Device:
 		crt_der = self.runtime_cert.export(format="DER")
 		pk_der = key.export_key(format="DER")
 
-		sync_key = sss.scum_sync_key
-		sync_salt = sss.scum_sync_salt
-		data_key = sss.scum_data_key
-		data_salt = sss.scum_data_salt
+		sync_key = self.sss.scum_sync_key
+		sync_salt = self.sss.scum_sync_salt
+		data_key = self.sss.scum_data_key
+		data_salt = self.sss.scum_data_salt
 
 		entropy = token_bytes(ENTROPY_POOL_SIZE)
 
-		first_sed = b'\x01' if (sss.reg_count == 0) else b'\x00'
-		sss.reg_count += 1
+		first_sed = b'\x01' if (self.sss.reg_count == 0) else b'\x00'
+		self.sss.reg_count += 1
 
 		# SCUM keys/salts/sync indicator have fixed length
 		return struct.pack('<HhHHHHHHHHH', self.addr, REG, len(ca_der), len(crt_der), len(pk_der), \
