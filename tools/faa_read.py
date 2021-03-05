@@ -4,6 +4,8 @@ import struct
 import sys
 
 OUTPUT_FILENAME = 'faa.log'
+FAA_SCEWL_ID = 2
+TEST_PREFACE = b'FAA_TEST_MSG: '
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.connect(sys.argv[1])
@@ -22,6 +24,12 @@ try:
 		while len(data) < ln:
 			data += sock.recv(ln - len(data))
 		msgs.append(f'{src}->{tgt} ({len(data)}B): {repr(data)}')
+
+		# If message is a test FAA message, send back to the sender
+		if (tgt == FAA_SCEWL_ID and data.startswith(TEST_PREFACE)):
+			msg = struct.pack(f'<2sHHH{len(data)}s', b'SC', src, FAA_SCEWL_ID, len(data), data)
+			sock.send(msg)
+			
 except:
 	print("Exit. Writing log.")
 
