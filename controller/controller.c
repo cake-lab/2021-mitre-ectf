@@ -427,7 +427,20 @@ int main() {
       if (hdr.src_id == SCEWL_ID) { // ignore our own outgoing messages
         read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
       } else {
-        if (hdr.tgt_id == SCEWL_BRDCST_ID) {
+        if (hdr.src_id == SCEWL_FAA_ID) {
+          // Receive FAA message into cpu_buf since could be max SCEWL length
+          if ((dtls_state.status != IDLE) && (!dtls_backed_up)) {
+            // Backup unicast
+            backup_buf(cpu_buf, DTLS);
+            dtls_backed_up = 1;
+          } else if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
+            // Backup broadcast
+            backup_buf(cpu_buf, SCUM);
+            scum_backed_up = 1;
+          }
+          len = read_body(RAD_INTF, &hdr, cpu_buf, sizeof(cpu_buf), 1);
+          handle_faa_recv(cpu_buf, len);
+        } else if (hdr.tgt_id == SCEWL_BRDCST_ID) {
           // Receive broadcast message
           if ((dtls_state.status != IDLE) && (!dtls_backed_up)) {
             // Backup unicast
@@ -442,33 +455,18 @@ int main() {
           len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
           scum_handle(&scum_ctx, hdr.src_id, scewl_buf, len);
         } else if (hdr.tgt_id == SCEWL_ID) {
-          // Receive unicast message
-          if (hdr.src_id == SCEWL_FAA_ID) {
-            if ((dtls_state.status != IDLE) && (!dtls_backed_up)) {
-              // Backup unicast
-              backup_buf(cpu_buf, DTLS);
-              dtls_backed_up = 1;
-            } else if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
-              // Backup broadcast
-              backup_buf(cpu_buf, SCUM);
-              scum_backed_up = 1;
-            }
-            len = read_body(RAD_INTF, &hdr, cpu_buf, sizeof(cpu_buf), 1);
-            handle_faa_recv(cpu_buf, len);
-          } else {
-            if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
-              // Backup broadcast
-              backup_buf(cpu_buf, SCUM);
-              scum_backed_up = 1;
-            }
-            if (dtls_backed_up) {
-              // Restore unicast
-              restore_buf(cpu_buf, DTLS);
-              dtls_backed_up = 0;
-            }
-            len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
-            dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
+          if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
+            // Backup broadcast
+            backup_buf(cpu_buf, SCUM);
+            scum_backed_up = 1;
           }
+          if (dtls_backed_up) {
+            // Restore unicast
+            restore_buf(cpu_buf, DTLS);
+            dtls_backed_up = 0;
+          }
+          len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
+          dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
         } else { // ignore messages for other devices
           read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
         }
