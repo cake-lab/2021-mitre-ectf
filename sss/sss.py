@@ -169,7 +169,20 @@ class Device:
 		try:
 			block(self.conn.do_handshake)
 			logging.debug(f'Finished handshake with {self.conn.getpeername()}.')
-			logging.info(f'Negotiated_tls_version: {self.conn.negotiated_tls_version()}')
+			logging.debug(f'Negotiated_tls_version: {self.conn.negotiated_tls_version()}')
+			# Verify that the peer has not been removed from the deployment.
+			certificate_file = f'/secrets/{self.conn.getpeername()}/sed.crt'
+			if not os.path.exists(certificate_file):
+				logging.warning(f'Handshake was successful with peer {self.conn.getpeername()}, who is not properly provisioned.')
+				self.disconnect()
+				return
+			expected_certificate = x509.CRT.from_file(certificate_file)
+			expected_pubkey = expected_certificate.subject_public_key
+			peer_pubkey = self.conn._buffer.context.get_peer_public_key()
+			if peer_pubkey != expected_pubkey:
+				logging.warning(f'Handshake was successful with peer {self.conn.getpeername()}, who is using a different public key than expected.')
+				self.disconnect()
+				return
 			self.handshake_complete = True
 		except tls.HelloVerifyRequest:
 			logging.debug(f'Hello verification requested.')
