@@ -444,8 +444,17 @@ int main() {
         } else if (hdr.tgt_id == SCEWL_ID) {
           // Receive unicast message
           if (hdr.src_id == SCEWL_FAA_ID) {
-            len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
-            handle_faa_recv(scewl_buf, len);
+            if ((dtls_state.status != IDLE) && (!dtls_backed_up)) {
+              // Backup unicast
+              backup_buf(cpu_buf, DTLS);
+              dtls_backed_up = 1;
+            } else if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
+              // Backup broadcast
+              backup_buf(cpu_buf, SCUM);
+              scum_backed_up = 1;
+            }
+            len = read_body(RAD_INTF, &hdr, cpu_buf, sizeof(cpu_buf), 1);
+            handle_faa_recv(cpu_buf, len);
           } else {
             if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
               // Backup broadcast
@@ -460,6 +469,8 @@ int main() {
             len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
             dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
           }
+        } else { // ignore messages for other devices
+          read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
         }
       }
     }
