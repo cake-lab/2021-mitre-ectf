@@ -110,7 +110,7 @@ static void dtls_server_setup(struct dtls_state *dtls_state, struct dtls_server_
 	mbedtls_ssl_conf_session_cache(&server_state->conf, &server_state->cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
 #endif
 
-	mbedtls_ssl_conf_ca_chain(&server_state->conf, &dtls_state->ca, NULL); // TODO use CRL?
+	mbedtls_ssl_conf_ca_chain(&server_state->conf, &dtls_state->ca, NULL);
 	ret = mbedtls_ssl_conf_own_cert(&server_state->conf, &dtls_state->cert, &dtls_state->pkey);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned -%#06x", (unsigned int) -ret);
@@ -167,7 +167,7 @@ static void dtls_client_setup(struct dtls_state *dtls_state, struct dtls_client_
 	mbedtls_ssl_conf_dbg(&client_state->conf, my_debug, NULL);
 	mbedtls_ssl_conf_handshake_timeout(&client_state->conf, HS_TIMEOUT_MS_MIN, HS_TIMEOUT_MS_MAX);
 
-	mbedtls_ssl_conf_ca_chain(&client_state->conf, &dtls_state->ca, NULL); // TODO use CRL?
+	mbedtls_ssl_conf_ca_chain(&client_state->conf, &dtls_state->ca, NULL);
 	ret = mbedtls_ssl_conf_own_cert(&client_state->conf, &dtls_state->cert, &dtls_state->pkey);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_conf_own_cert returned -%#06x", (unsigned int) -ret);
@@ -220,6 +220,7 @@ void dtls_rekey(
 		cn = NULL;
 	}
 
+	// Load CA certificate
 	ret = mbedtls_x509_crt_parse(&state->ca, ca, ca_len);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
@@ -227,6 +228,7 @@ void dtls_rekey(
 		return;
 	}
 
+	// Load own certificate
 	ret = mbedtls_x509_crt_parse(&state->cert, crt, crt_len);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_x509_crt_parse returned -%#06x", (unsigned int) -ret);
@@ -234,6 +236,7 @@ void dtls_rekey(
 		return;
 	}
 
+	// Load own private key
 	ret = mbedtls_pk_parse_key(&state->pkey, key, key_len, NULL, 0);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_pk_parse_key returned -%#06x", (unsigned int) -ret);
@@ -241,6 +244,7 @@ void dtls_rekey(
 		return;
 	}
 
+	// Verify own certificate
 	ret = mbedtls_x509_crt_verify(&state->cert, &state->ca, NULL, cn, &flags, NULL, NULL);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_x509_crt_verify returned -%#06x with flags %#10x", (unsigned int) -ret, flags);
@@ -249,6 +253,7 @@ void dtls_rekey(
 	}
 
 	mbedtls_printf("Successfully loaded certificates and key.");
+	// Print information about certificate
 	ret = mbedtls_x509_crt_info(cert_info, 1000, NULL, &state->cert);
 	if (ret > 0) {
 		mbedtls_printf("This SED's certificate: %s", cert_info);
@@ -269,7 +274,7 @@ void dtls_rekey_to_default(struct dtls_state *state, bool free_existing, bool ve
 }
 
 /*
- * Switch to runtime RNG entropy source
+ * Switch to the runtime entropy source for the RNG.
  */
 void dtls_config_runtime_rng(struct dtls_state *state) {
 	int ret;
@@ -306,24 +311,17 @@ void dtls_setup(struct dtls_state *state, char *message_buf) {
 	mbedtls_pk_init(&state->pkey);
 	mbedtls_hmac_drbg_init(&state->hmac_drbg);
 
-	/*
-	 * Load the certificates and private RSA key
-	 */
+	// Load the certificates and private RSA key
 	mbedtls_printf("Loading certificates and key...");
-
 	dtls_rekey_to_default(state, false, false);
-
 	mbedtls_printf("ok");
 
-	/*
-	 * Set up RNG
-	 */
+	// Set up RNG
 	ret = rng_setup_initial_pool(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if(ret != 0) {
 		dtls_fatal_error(state, ret);
 		return;
 	}
-
 	mbedtls_printf( "ok" );
 
 	dtls_server_setup(state, &state->server_state);
@@ -704,7 +702,7 @@ void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t me
 }
 
 /*
- * Handle a DTLS packet received over the SCEWL bus.
+ * Handle a DTLS packet received over the SCEWL bus or the SSS bus.
  */
 void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, size_t data_len) {
 	switch (state->status) {
@@ -750,7 +748,7 @@ void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, s
 }
 
 /*
- * This function must be called often.
+ * If a timeout has expired, run the session.
  */
 void dtls_check_timers(struct dtls_state *state) {
 	switch (state->status) {
