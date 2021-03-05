@@ -79,7 +79,7 @@ typedef struct scewl_sss_msg_t {
 } scewl_sss_msg_t;
 
 // SCEWL status codes
-enum scewl_status { SCEWL_ERR = -1, SCEWL_OK, SCEWL_ALREADY, SCEWL_NO_MSG };
+enum scewl_status { SCEWL_ERR = -2, SCEWL_NO_MSG = -1, SCEWL_OK, SCEWL_ALREADY };
 
 // registration/deregistration options
 enum scewl_sss_op_t { SCEWL_SSS_BAD_REQUEST = -1, SCEWL_SSS_REG, SCEWL_SSS_DEREG };
@@ -88,20 +88,44 @@ enum scewl_sss_op_t { SCEWL_SSS_BAD_REQUEST = -1, SCEWL_SSS_REG, SCEWL_SSS_DEREG
 enum scewl_ids { SCEWL_BRDCST_ID, SCEWL_SSS_ID, SCEWL_FAA_ID };
 
 /*
+ * read_hdr
+ *
+ * Gets a message header in the SCEWL pkt format from an interface
+ *
+ * Args:
+ *   intf - pointer to the physical interface device
+ *   hdr - pointer to header
+ *   blocking - whether to wait for a message or not
+ */
+int read_hdr(intf_t *intf, scewl_hdr_t *hdr, int blocking);
+
+/*
+ * read_body
+ *
+ * Gets a message body in the SCEWL pkt format from an interface
+ *
+ * Args:
+ *   intf - pointer to the physical interface device
+ *   hdr - pointer to header
+ *   buf - pointer to the message buffer
+ *   n - maximum characters to be read into buf
+ *   blocking - whether to wait for a message or not
+ */
+int read_body(intf_t *intf, scewl_hdr_t *hdr, char *buf, size_t n, int blocking);
+
+/*
  * read_msg
  *
  * Gets a message in the SCEWL pkt format from an interface
  *
  * Args:
  *   intf - pointer to the physical interface device
+ *   hdr - pointer to header
  *   buf - pointer to the message buffer
- *   src_id - pointer to a src_id
- *   tgt_id - pointer to a tgt_id
  *   n - maximum characters to be read into buf
  *   blocking - whether to wait for a message or not
  */
-int read_msg(intf_t *intf, char *buf, scewl_id_t *src_id, scewl_id_t *tgt_id,
-             size_t n, int blocking);
+int read_msg(intf_t *intf, scewl_hdr_t *hdr, char *buf, size_t n, int blocking);
 
 /*
  * send_msg

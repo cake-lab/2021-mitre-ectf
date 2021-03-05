@@ -84,54 +84,57 @@ void restore_buf(char *buf, enum proto_type type)
   }
 }
 
+// Read message header only
+int read_hdr(intf_t *intf, scewl_hdr_t *hdr, int blocking) {
+  int read;
 
-int read_msg(intf_t *intf, char *data, scewl_id_t *src_id, scewl_id_t *tgt_id,
-             size_t n, int blocking) {
-  scewl_hdr_t hdr;
-  int read, max;
-
-  // clear buffer and header
-  memset(&hdr, 0, sizeof(hdr));
-  memset(data, 0, n);
+  // clear header
+  memset(hdr, 0, sizeof(scewl_hdr_t));
 
   // find header start
   do {
-    hdr.magicC = 0;
+    hdr->magicC = 0;
 
-    if (intf_read(intf, (char *)&hdr.magicS, 1, blocking) == INTF_NO_DATA) {
+    if (intf_read(intf, (char *)&hdr->magicS, 1, blocking) == INTF_NO_DATA) {
       return SCEWL_NO_MSG;
     }
 
     // check for SC
-    if (hdr.magicS == 'S') {
+    if (hdr->magicS == 'S') {
       do {
-        if (intf_read(intf, (char *)&hdr.magicC, 1, blocking) == INTF_NO_DATA) {
+        if (intf_read(intf, (char *)&hdr->magicC, 1, blocking) == INTF_NO_DATA) {
           return SCEWL_NO_MSG;
         }
-      } while (hdr.magicC == 'S'); // in case of multiple 'S's in a row
+      } while (hdr->magicC == 'S'); // in case of multiple 'S's in a row
     }
-  } while (hdr.magicS != 'S' && hdr.magicC != 'C');
+  } while (hdr->magicS != 'S' && hdr->magicC != 'C');
 
   // read rest of header
-  read = intf_read(intf, (char *)&hdr + 2, sizeof(scewl_hdr_t) - 2, blocking);
+  read = intf_read(intf, (char *)hdr + 2, sizeof(scewl_hdr_t) - 2, blocking);
   if(read == INTF_NO_DATA) {
     return SCEWL_NO_MSG;
   }
 
-  // unpack header
-  *src_id = hdr.src_id;
-  *tgt_id = hdr.tgt_id;
+  return SCEWL_OK;
+}
+
+// Read message body only
+int read_body(intf_t *intf, scewl_hdr_t *hdr, char *data, size_t n, int blocking) {
+  int read, max;
+
+  // clear buffer and header
+  memset(data, 0, n);
 
   if (intf == SSS_INTF) {
-    mbedtls_printf("Packet has payload length %hu.", hdr.len);
+    mbedtls_printf("Packet has payload length %hu.", hdr->len);
   }
 
   // read body
-  max = hdr.len < n ? hdr.len : n;
+  max = hdr->len < n ? hdr->len : n;
   read = intf_read(intf, data, max, blocking);
 
   // throw away rest of message if too long
-  for (int i = 0; hdr.len > max && i < hdr.len - max; i++) {
+  for (int i = 0; hdr->len > max && i < hdr->len - max; i++) {
     intf_readb(intf, 0);
   }
 
@@ -141,6 +144,14 @@ int read_msg(intf_t *intf, char *data, scewl_id_t *src_id, scewl_id_t *tgt_id,
   }
 
   return max;
+}
+
+// Read full message
+int read_msg(intf_t *intf, scewl_hdr_t *hdr, char *data, size_t n, int blocking) {
+  if (read_hdr(intf, hdr, blocking) == SCEWL_NO_MSG) {
+    return SCEWL_NO_MSG;
+  }
+  return read_body(intf, hdr, data, n, blocking);
 }
 
 
@@ -314,7 +325,7 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
  *    2. Waiting to sync SCUM
  *    3. Registered, synced, and handling some type of message
  */
-#define CAN_TAKE_CPU_MSG(reg, synced, dtls, scum) (\
+#define CANT_TAKE_CPU_MSG(reg, synced, dtls, scum) (\
   (!reg && (dtls != IDLE)) || \
   (reg && !synced)         || \
   (reg && synced && ((dtls != IDLE) || (scum == S_RECV)))\
@@ -326,7 +337,6 @@ int main() {
   unsigned char memory_buf[30000];
   int len;
   scewl_hdr_t hdr;
-  uint16_t src_id, tgt_id;
   // buffers for CPU and SCEWL packets
   char cpu_buf[SCEWL_MAX_DATA_SZ];
   char scewl_buf[1000];
@@ -379,7 +389,6 @@ int main() {
 
   // serve forever
   while (1) {
-    memset(&hdr, 0, sizeof(hdr));
 
     // Handle final timer expiration
     if (fin_timer_event) {
@@ -389,24 +398,24 @@ int main() {
 
     // handle outgoing message from CPU
     if (intf_avail(CPU_INTF)) {
-      if (CAN_TAKE_CPU_MSG(registered, scum_ctx.synced, dtls_state.status, scum_ctx.data_session.status)) {
+      if (CANT_TAKE_CPU_MSG(registered, scum_ctx.synced, dtls_state.status, scum_ctx.data_session.status)) {
         mbedtls_printf("There is a message waiting on the CPU interface.");
       } else {
         // Read message from CPU
         mbedtls_printf("Receiving message on CPU interface.");
-        len = read_msg(CPU_INTF, cpu_buf, &src_id, &tgt_id, sizeof(cpu_buf), 1);
+        len = read_msg(CPU_INTF, &hdr, cpu_buf, sizeof(cpu_buf), 1);
         mbedtls_printf("Received message from CPU.");
 
-        if (tgt_id == SCEWL_BRDCST_ID) {
+        if (hdr.tgt_id == SCEWL_BRDCST_ID) {
           scum_send(&scum_ctx, len);
-        } else if (tgt_id == SCEWL_SSS_ID) {
+        } else if (hdr.tgt_id == SCEWL_SSS_ID) {
           mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
           dtls_rekey_to_default(&dtls_state, true, false);
           dtls_send_message_to_sss(&dtls_state, cpu_buf, len);
-        } else if (tgt_id == SCEWL_FAA_ID) {
+        } else if (hdr.tgt_id == SCEWL_FAA_ID) {
           handle_faa_send(cpu_buf, len);
         } else {
-          dtls_send_message(&dtls_state, tgt_id, cpu_buf, len);
+          dtls_send_message(&dtls_state, hdr.tgt_id, cpu_buf, len);
         }
       }
     }
@@ -414,9 +423,9 @@ int main() {
     // handle incoming radio message
     if (intf_avail(RAD_INTF)) {
       // Read message from antenna
-      len = read_msg(RAD_INTF, scewl_buf, &src_id, &tgt_id, sizeof(scewl_buf), 1);
-      if (src_id != SCEWL_ID) { // ignore our own outgoing messages
-        if (tgt_id == SCEWL_BRDCST_ID) {
+      len = read_msg(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
+      if (hdr.src_id != SCEWL_ID) { // ignore our own outgoing messages
+        if (hdr.tgt_id == SCEWL_BRDCST_ID) {
           // Receive broadcast message
           if ((dtls_state.status != IDLE) && (!dtls_backed_up)) {
             // Backup unicast
@@ -428,10 +437,10 @@ int main() {
             restore_buf(cpu_buf, SCUM);
             scum_backed_up = 0;
           }
-          scum_handle(&scum_ctx, src_id, scewl_buf, len);
-        } else if (tgt_id == SCEWL_ID) {
+          scum_handle(&scum_ctx, hdr.src_id, scewl_buf, len);
+        } else if (hdr.tgt_id == SCEWL_ID) {
           // Receive unicast message
-          if (src_id == SCEWL_FAA_ID) {
+          if (hdr.src_id == SCEWL_FAA_ID) {
             handle_faa_recv(scewl_buf, len);
           } else {
             if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
@@ -444,7 +453,7 @@ int main() {
               restore_buf(cpu_buf, DTLS);
               dtls_backed_up = 0;
             }
-            dtls_handle_packet(&dtls_state, src_id, scewl_buf, len);
+            dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
           }
         }
       }
@@ -454,14 +463,14 @@ int main() {
     if (intf_avail(SSS_INTF)) {
       if (dtls_state.status != TALKING_TO_SSS) {
         mbedtls_printf("Discarding unsolicited packet on SSS interface.");
-        read_msg(SSS_INTF, scewl_buf, &src_id, &tgt_id, sizeof(scewl_buf), 1);
+        read_msg(SSS_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
       } else {
         // Read message from wire
         mbedtls_printf("Receiving packet on SSS interface.");
-        len = read_msg(SSS_INTF, scewl_buf, &src_id, &tgt_id, sizeof(scewl_buf), 1);
-        if (src_id == SCEWL_SSS_ID && tgt_id == SCEWL_ID) {
+        len = read_msg(SSS_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
+        if (hdr.src_id == SCEWL_SSS_ID && hdr.tgt_id == SCEWL_ID) {
           mbedtls_printf("Received packet from SSS.");
-          dtls_handle_packet(&dtls_state, src_id, scewl_buf, len);
+          dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
         } else {
           mbedtls_printf("Received bogon on SSS interface.");
         }
