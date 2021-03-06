@@ -217,7 +217,7 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
                    cpu_buf_ref, scewl_buf_ref,
                    *first_sed);
 
-          if (!scum_ctx_ref->synced) {
+          if (scum_ctx_ref->status == S_UNSYNC) {
             scum_sync(scum_ctx_ref);
             mbedtls_printf("Sent SCUM sync request...");
           }
@@ -322,13 +322,13 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
  * Macro for complicated CPU buf read condition
  * Ignore CPU buf in any of these conditions:
  *    1. Already took CPU reg request
- *    2. Waiting to sync SCUM
- *    3. Registered, synced, and handling some type of message
+ *    2. Registered and SCUM unsynced
+ *    3. Registered, SCUM synced, and handling some type of message
  */
-#define CANT_TAKE_CPU_MSG(reg, synced, dtls, scum) (\
+#define CANT_TAKE_CPU_MSG(reg, dtls, scum) (\
   (!reg && (dtls != IDLE)) || \
-  (reg && !synced)         || \
-  (reg && synced && ((dtls != IDLE) || (scum == S_RECV)))\
+  (reg && (scum == S_UNSYNC || scum == S_WAIT_SYNC)) || \
+  (reg && (scum != S_UNSYNC && scum != S_WAIT_SYNC) && (dtls != IDLE || scum == S_RECV))\
 )
 
 int main() {
@@ -398,7 +398,7 @@ int main() {
 
     // handle outgoing message from CPU
     if (intf_avail(CPU_INTF)) {
-      if (CANT_TAKE_CPU_MSG(registered, scum_ctx.synced, dtls_state.status, scum_ctx.data_session.status)) {
+      if (CANT_TAKE_CPU_MSG(registered, dtls_state.status, scum_ctx.status)) {
         mbedtls_printf("There is a message waiting on the CPU interface.");
       } else {
         // Read message from CPU
@@ -433,7 +433,7 @@ int main() {
             // Backup unicast
             backup_buf(cpu_buf, DTLS);
             dtls_backed_up = 1;
-          } else if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
+          } else if ((scum_ctx.status == S_RECV) && (!scum_backed_up)) {
             // Backup broadcast
             backup_buf(cpu_buf, SCUM);
             scum_backed_up = 1;
@@ -455,7 +455,7 @@ int main() {
           len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
           scum_handle(&scum_ctx, hdr.src_id, scewl_buf, len);
         } else if (hdr.tgt_id == SCEWL_ID) {
-          if ((scum_ctx.data_session.status == S_RECV) && (!scum_backed_up)) {
+          if ((scum_ctx.status == S_RECV) && (!scum_backed_up)) {
             // Backup broadcast
             backup_buf(cpu_buf, SCUM);
             scum_backed_up = 1;

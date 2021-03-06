@@ -59,10 +59,11 @@
  * Custom Types/Structs
  */
 
-// SCUM channel types
-enum scum_channel_type {
-  S_DATA_CHANNEL,
-  S_SYNC_CHANNEL
+// Errors
+enum scum_error_type {
+  S_FATAL_ERROR = -3,
+  S_SOFT_ERROR = -2,
+  S_PASS = -1
 };
 
 // SCUM message types
@@ -74,10 +75,10 @@ enum scum_msg_type {
 
 // SCUM communication states
 enum scum_status {
+  S_ERROR,
   S_UNSYNC,
+  S_WAIT_SYNC,
   S_IDLE,
-  S_SYNC,
-  S_SEND,
   S_RECV,
   S_DONE
 };
@@ -104,7 +105,6 @@ struct scum_crypto {
 
 // SCUM data session context
 struct scum_data_session {
-  enum scum_status status;
   struct scum_crypto crypto;
 
   scewl_id_t recv_src_id;
@@ -121,7 +121,6 @@ struct scum_data_session {
 
 // SCUM sync session context
 struct scum_sync_session {
-  enum scum_status status;
   struct scum_crypto crypto;
 
   char *rad_buf;
@@ -131,7 +130,7 @@ struct scum_sync_session {
 };
 
 struct scum_ctx {
-  unsigned char synced;
+  enum scum_status status;
   struct scum_data_session data_session;
   struct scum_sync_session sync_session;
 };

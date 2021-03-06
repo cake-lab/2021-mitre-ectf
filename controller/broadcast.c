@@ -50,13 +50,13 @@ static int scum_check_frame(char *data_buf, size_t data_len)
   // Check frame and data size is valid
   if (data_len < SCUM_HDR_LEN) {
     mbedtls_printf("Incoming SCEWL data too short for full SCUM header");
-    return -1;
+    return S_SOFT_ERROR;
   } else if (data_len > SCUM_MTU) {
     mbedtls_printf("Incoming SCEWL data longer than SCUM MTU");
-    return -2;
+    return S_SOFT_ERROR;
   } else if (SCUM_HDR_LEN + hdr->length + SCUM_TAG_LEN != data_len) {
     mbedtls_printf("Incoming SCUM and SCEWL lengths are not compatible");
-    return -3;
+    return S_SOFT_ERROR;
   }
 
   return 0;
@@ -95,14 +95,14 @@ static int scum_derive_keys(struct scum_crypto *crypto)
   ret = mbedtls_aes_crypt_ecb(&crypto->aes, MBEDTLS_AES_ENCRYPT, iv_buf, key_buf);
   if (ret != 0) {
     mbedtls_printf("failed! mbedtls_aes_crypt_ecb returned -%#06x", (unsigned int) -ret);
-    return -1;
+    return S_FATAL_ERROR;
   }
   // Derive key block 1
   iv_buf[15] ^= 0x01;
   ret = mbedtls_aes_crypt_ecb(&crypto->aes, MBEDTLS_AES_ENCRYPT, iv_buf, key_buf+CIPHER_BLOCK_LEN);
   if (ret != 0) {
     mbedtls_printf("failed! mbedtls_aes_crypt_ecb returned -%#06x", (unsigned int) -ret);
-    return -2;
+    return S_FATAL_ERROR;
   }
 
   // Derive salt
@@ -111,7 +111,7 @@ static int scum_derive_keys(struct scum_crypto *crypto)
   ret = mbedtls_aes_crypt_ecb(&crypto->aes, MBEDTLS_AES_ENCRYPT, iv_buf, crypto->e_salt);
   if (ret != 0) {
     mbedtls_printf("failed! mbedtls_aes_crypt_ecb returned -%#06x", (unsigned int) -ret);
-    return -3;
+    return S_FATAL_ERROR;
   }
   memset(crypto->e_salt+S_SALT_LEN, 0, CIPHER_BLOCK_LEN-S_SALT_LEN); // Only 12 bytes
 
@@ -119,7 +119,7 @@ static int scum_derive_keys(struct scum_crypto *crypto)
   ret = mbedtls_gcm_setkey(&crypto->gcm, MBEDTLS_CIPHER_ID_AES, key_buf, S_KEY_LEN*8);
   if (ret != 0) {
     mbedtls_printf("failed! mbedtls_gcm_setkey returned -%#06x", (unsigned int) -ret);
-    return -4;
+    return S_FATAL_ERROR;
   }
 
   crypto->key_count++;
@@ -140,7 +140,7 @@ static int scum_update_keys(struct scum_crypto *crypto, uint64_t msg_count)
   ret = scum_derive_keys(crypto);
   if (ret != 0) {
     mbedtls_printf("Key refresh failed");
-    return -1;
+    return ret;
   }
 
   return 0;
@@ -171,7 +171,7 @@ static int scum_crypto_setup(struct scum_crypto *crypto, char *key, char *salt, 
   ret = mbedtls_aes_setkey_enc(&crypto->aes, (uint8_t *)key, S_KEY_LEN*8);
   if (ret != 0) {
     mbedtls_printf("failed! mbedtls_aes_setkey_enc returned -%#06x", (unsigned int) -ret);
-    return -1;
+    return S_FATAL_ERROR;
   }
 
   // Load PRF salt
@@ -181,7 +181,7 @@ static int scum_crypto_setup(struct scum_crypto *crypto, char *key, char *salt, 
   ret = scum_derive_keys(crypto);
   if (ret != 0) {
     mbedtls_printf("Key initialization failed");
-    return -2;
+    return ret;
   }
 
   return 0;
@@ -193,7 +193,6 @@ static int scum_data_setup(struct scum_data_session *session, char *key, char *s
   int ret;
 
   // Initialize session parameters
-  session->status = S_UNSYNC;
   session->msg_count = 0;
   session->in_received = 0;
   session->out_remaining = 0;
@@ -206,7 +205,7 @@ static int scum_data_setup(struct scum_data_session *session, char *key, char *s
   ret = scum_crypto_setup(&session->crypto, key, salt, SCUM_DEFAULT_KDR);
   if (ret != 0) {
     mbedtls_printf("Data session key setup failed");
-    return -1;
+    return ret;
   }
 
   return 0;
@@ -218,17 +217,20 @@ static int scum_sync_setup(struct scum_sync_session *session, char *key, char *s
   int ret;
 
   // Initialize session parameters
-  session->status = S_IDLE;
   session->rad_buf = rad_buf;
 
   // Initialize cryptographic primitives
-  rng_setup_runtime_pool(&session->rng, NULL, 0);
+  ret = rng_setup_runtime_pool(&session->rng, NULL, 0);
+  if (ret != 0) {
+    mbedtls_printf("Sync session RNG setup failed");
+    return S_FATAL_ERROR;
+  }
 
   // Set up crypto context
   ret = scum_crypto_setup(&session->crypto, key, salt, 0);
   if (ret != 0) {
     mbedtls_printf("Sync session key setup failed");
-    return -1;
+    return ret;
   }
 
   return 0;
@@ -293,7 +295,7 @@ static int scum_push_frame(struct scum_crypto *crypto, char *data_buf, char *out
                             SCUM_TAG_LEN, tag_ptr);
   if (ret != 0) {
     mbedtls_printf("failed! mbedtls_gcm_crypt_and_tag returned -%#06x", (unsigned int) -ret);
-    return -1;
+    return S_FATAL_ERROR;
   }
 
   // Send encrypted packet
@@ -331,7 +333,7 @@ static int scum_absorb_frame(struct scum_crypto *crypto, char *data_buf, char *i
                            ptext_ptr);
   if (ret != 0) {
     mbedtls_printf("failed! mbedtls_gcm_auth_decrypt returned -%#06x", (unsigned int) -ret);
-    return -1;
+    return S_SOFT_ERROR;
   }
 
   return hdr->length;
@@ -374,7 +376,7 @@ static int scum_data_push(struct scum_data_session *session)
   ret = scum_push_frame(&session->crypto, read_ptr, write_ptr);
   if (ret < 0) {
     mbedtls_printf("Failed to send SCUM frame");
-    return -1;
+    return ret;
   }
 
   // Update stream status
@@ -387,7 +389,7 @@ static int scum_data_push(struct scum_data_session *session)
   ret = scum_update_keys(&session->crypto, session->msg_count);
   if (ret != 0) {
     mbedtls_printf("Data session (send) key refresh failed");
-    return -2;
+    return ret;
   }
 
   // Return stream status
@@ -395,42 +397,46 @@ static int scum_data_push(struct scum_data_session *session)
 }
 
 // Process outgoing broadcast message
-static int scum_data_send(struct scum_data_session *session, size_t data_len)
+static int scum_data_send(struct scum_ctx *ctx, size_t data_len)
 { 
+  struct scum_data_session *session;
   int ret;
 
+  session = &ctx->data_session;
+
   // Start new data stream if not being used (unsynced state will bypass)
-  if (session->status == S_IDLE) {
+  if (ctx->status == S_IDLE) {
     session->out_remaining = data_len;
     session->out_msg_len = data_len;
-    session->status = S_SEND;
-  }
-  if (session->status == S_SEND) {
+
     do {
       ret = scum_data_push(session);
       if (ret < 0) {
         mbedtls_printf("Failed to push SCUM data frame");
-        session->status = S_IDLE;
-        return -1;
+        ctx->status = S_IDLE;
+        return ret;
       }
     } while (ret != 1);
-    session->status = S_DONE;
+    ctx->status = S_DONE;
   }
-  if (session->status == S_DONE) {
+  if (ctx->status == S_DONE) {
     mbedtls_printf("Sent broadcast: %.*s", session->out_msg_len, session->app_buf);
-    session->status = S_IDLE;
+    ctx->status = S_IDLE;
   }
 
   return 0;
 }
 
 // Receive next data frame from radio buffer into app buffer
-static int scum_data_absorb(struct scum_data_session *session)
+static int scum_data_absorb(struct scum_ctx *ctx)
 {
+  struct scum_data_session *session;
   struct scum_hdr *hdr;
   char *read_ptr;
   char *write_ptr;
   int ret;
+
+  session = &ctx->data_session;
 
   // Get header
   hdr = (struct scum_hdr *)session->rad_buf;
@@ -438,10 +444,10 @@ static int scum_data_absorb(struct scum_data_session *session)
   // Make sure message can fit and is in sequence
   if (hdr->length + session->in_received > MAX_SCEWL_LEN) {
     mbedtls_printf("Attempted to receive more than MAX_SCEWL_LEN bytes");
-    return -1;
+    return S_SOFT_ERROR;
   } else if (hdr->seq_number < session->msg_count) {
     mbedtls_printf("Attempted to receive message with earlier sequence number");
-    return -2;
+    return S_SOFT_ERROR;
   }
 
   // Set up pointers
@@ -452,7 +458,7 @@ static int scum_data_absorb(struct scum_data_session *session)
   ret = scum_absorb_frame(&session->crypto, read_ptr, write_ptr);
   if (ret < 0) {
     mbedtls_printf("Failed to decrypt SCUM frame");
-    return -3;
+    return ret;
   }
 
   // Update stream status
@@ -465,7 +471,7 @@ static int scum_data_absorb(struct scum_data_session *session)
   ret = scum_update_keys(&session->crypto, session->msg_count);
   if (ret != 0) {
     mbedtls_printf("Data session (receive) key refresh failed");
-    return -4;
+    return ret;
   }
 
   // Return stream status
@@ -473,17 +479,20 @@ static int scum_data_absorb(struct scum_data_session *session)
 }
 
 // Process incoming broadcast message
-static int scum_data_receive(struct scum_data_session *session, scewl_id_t src_id)
+static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id)
 {
+  struct scum_data_session *session;
   int ret;
 
+  session = &ctx->data_session;
+
   // Start new data stream or continue current one (unsynced state will bypass)
-  if (session->status == S_IDLE) {
+  if (ctx->status == S_IDLE) {
     session->recv_src_id = src_id;
     session->in_received = 0;
-    session->status = S_RECV;
+    ctx->status = S_RECV;
   }
-  if (session->status == S_RECV) {
+  if (ctx->status == S_RECV) {
     // Check the same SED is broadcasting
     if (src_id != session->recv_src_id) {
       mbedtls_printf("Ignoring broadcast from ID %d during broadcast from ID %d", src_id, session->recv_src_id);
@@ -491,20 +500,20 @@ static int scum_data_receive(struct scum_data_session *session, scewl_id_t src_i
     }
 
     // Handle the frame - check for error or end marker
-    ret = scum_data_absorb(session);
+    ret = scum_data_absorb(ctx);
     if (ret < 0) {
       mbedtls_printf("Failed to absorb SCUM data frame");
-      session->status = S_IDLE;
-      return -1;
+      ctx->status = S_IDLE;
+      return ret;
     } else if (ret == 1) {
-      session->status = S_DONE;
+      ctx->status = S_DONE;
     }
   }
-  if (session->status == S_DONE) {
+  if (ctx->status == S_DONE) {
     // Send to CPU
     handle_brdcst_recv((char *)session->app_buf, session->recv_src_id, session->in_received);
     mbedtls_printf("Received broadcast from %d: %.*s", session->recv_src_id, session->in_received, session->app_buf);
-    session->status = S_IDLE;
+    ctx->status = S_IDLE;
   }
 
   return 0;
@@ -518,17 +527,20 @@ static int scum_data_receive(struct scum_data_session *session, scewl_id_t src_i
  */
 
 // Process outgoing sync request
-static int scum_sync_req_send(struct scum_sync_session *session)
+static int scum_sync_req_send(struct scum_ctx *ctx)
 {
+  struct scum_sync_session *session;
   struct scum_hdr *hdr;
   char *read_ptr;
   char *write_ptr;
   int ret;
 
-  // Check if sync session is running
-  if (session->status != S_IDLE) {
-    mbedtls_printf("Tried sending a sync request while receiving another");
-    return -1;
+  session = &ctx->sync_session;
+
+  // Check if sync is needed
+  if (ctx->status != S_UNSYNC) {
+    mbedtls_printf("Tried sending a sync request outside of fully unsynced state");
+    return S_SOFT_ERROR;
   }
 
   // Construct header in output buffer
@@ -542,7 +554,7 @@ static int scum_sync_req_send(struct scum_sync_session *session)
   ret = mbedtls_hmac_drbg_random(&session->rng, session->sync_bytes, SCUM_SYNC_REQ_LEN);
   if (ret != 0) {
     mbedtls_printf("failed! mbedtls_hmac_drbg_random returned -%#06x", (unsigned int) -ret);
-    return -2 ;
+    return S_FATAL_ERROR;
   }
 
   // Set up pointers
@@ -553,18 +565,20 @@ static int scum_sync_req_send(struct scum_sync_session *session)
   ret = scum_push_frame(&session->crypto, read_ptr, write_ptr);
   if (ret < 0) {
     mbedtls_printf("Failed to send sync request frame");
-    return -3;
+    return ret;
   }
 
-  // Update session status
-  session->status = S_SYNC;
+  // Update status
+  ctx->status = S_WAIT_SYNC;
 
   return 0;
 }
 
 // Process incoming sync request
-static int scum_sync_req_handle(struct scum_sync_session *session, struct scum_data_session *data_session)
+static int scum_sync_req_handle(struct scum_ctx *ctx)
 {
+  struct scum_sync_session *sync_session;
+  struct scum_data_session *data_session;
   struct scum_hdr *hdr;
   uint8_t msg_buf[SCUM_SYNC_RESP_LEN];
   uint32_t prev_key_count;
@@ -572,30 +586,38 @@ static int scum_sync_req_handle(struct scum_sync_session *session, struct scum_d
   char *write_ptr;
   int ret;
 
+  sync_session = &ctx->sync_session;
+  data_session = &ctx->data_session;
+
   // Get header
-  hdr = (struct scum_hdr *)session->rad_buf;
+  hdr = (struct scum_hdr *)sync_session->rad_buf;
 
   // Check if sync session is running
-  if (session->status != S_IDLE) {
-    mbedtls_printf("Ignorning sync request message");
-    return 0;
+  switch (ctx->status) {
+    case S_ERROR:
+    case S_UNSYNC:
+    case S_WAIT_SYNC:
+      mbedtls_printf("Ignoring sync request message");
+      return S_PASS;
+    default:
+      break;
   }
 
   // Check message length
   if (hdr->length != SCUM_SYNC_REQ_LEN) {
     mbedtls_printf("Got a sync request with invalid message length");
-    return -1;
+    return S_SOFT_ERROR;
   }
 
   // Set up pointers
-  read_ptr = session->rad_buf;
+  read_ptr = sync_session->rad_buf;
   write_ptr = (char *)msg_buf;
 
   // Decrypt
-  ret = scum_absorb_frame(&session->crypto, read_ptr, write_ptr);
+  ret = scum_absorb_frame(&sync_session->crypto, read_ptr, write_ptr);
   if (ret < 0) {
     mbedtls_printf("Failed to decrypt SCUM frame");
-    return -2;
+    return ret;
   }
 
   // Copy message count and previous key
@@ -604,7 +626,7 @@ static int scum_sync_req_handle(struct scum_sync_session *session, struct scum_d
   memcpy(msg_buf+SCUM_SYNC_REQ_LEN+SCUM_MSG_COUNT_LEN, (uint8_t *)&prev_key_count, SCUM_KEY_COUNT_LEN);
 
   // Construct outgoing header
-  hdr = (struct scum_hdr *)session->rad_buf;
+  hdr = (struct scum_hdr *)sync_session->rad_buf;
   hdr->type = S_SYNC_RESP;
   hdr->seq_number = 0;
   hdr->length = SCUM_SYNC_RESP_LEN;
@@ -612,58 +634,63 @@ static int scum_sync_req_handle(struct scum_sync_session *session, struct scum_d
 
   // Set up pointers
   read_ptr = (char *)msg_buf;
-  write_ptr = session->rad_buf;
+  write_ptr = sync_session->rad_buf;
 
   // Encrypt and send
-  ret = scum_push_frame(&session->crypto, read_ptr, write_ptr);
+  ret = scum_push_frame(&sync_session->crypto, read_ptr, write_ptr);
   if (ret < 0) {
     mbedtls_printf("Failed to send SCUM frame");
-    return -3;
+    return ret;
   }
 
   return 0;
 }
 
 // Process incoming sync response
-static int scum_sync_resp_receive(struct scum_sync_session *session, struct scum_data_session *data_session)
+static int scum_sync_resp_receive(struct scum_ctx *ctx)
 {
+  struct scum_sync_session *sync_session;
+  struct scum_data_session *data_session;
   struct scum_hdr *hdr;
   uint8_t msg_buf[SCUM_SYNC_RESP_LEN];
   char *read_ptr;
   char *write_ptr;
   int ret;
 
-  // Check if sync session is running
-  if (session->status != S_SYNC) {
+  sync_session = &ctx->sync_session;
+  data_session = &ctx->data_session;
+
+  // Check sync session isn't running
+  if (ctx->status != S_WAIT_SYNC) {
     mbedtls_printf("Ignoring sync response message");
-    return 0;
+    return S_PASS;
   }
 
   // Get header
-  hdr = (struct scum_hdr *)session->rad_buf;
+  hdr = (struct scum_hdr *)sync_session->rad_buf;
 
   // Check message length
   if (hdr->length != SCUM_SYNC_RESP_LEN) {
     mbedtls_printf("Got a synq response with invalid message length");
-    return -1;
+    return S_SOFT_ERROR;
   }
 
   // Set up pointers
-  read_ptr = session->rad_buf;
+  read_ptr = sync_session->rad_buf;
   write_ptr = (char *)msg_buf;
 
   // Decrypt
-  ret = scum_absorb_frame(&session->crypto, read_ptr, write_ptr);
+  ret = scum_absorb_frame(&sync_session->crypto, read_ptr, write_ptr);
   if (ret < 0) {
     mbedtls_printf("Failed to decrypt SCUM frame");
-    return -2;
+    return ret;
   }
 
   // Check random bytes match
-  ret = memcmp(msg_buf, session->sync_bytes, SCUM_SYNC_REQ_LEN);
+  ret = memcmp(msg_buf, sync_session->sync_bytes, SCUM_SYNC_REQ_LEN);
   if (ret != 0) {
     mbedtls_printf("Received incorrect sync bytes in synq response");
-    return -3;
+    return S_SOFT_ERROR;
   }
 
   // Copy message and key counts
@@ -671,20 +698,19 @@ static int scum_sync_resp_receive(struct scum_sync_session *session, struct scum
   memcpy((uint8_t *)&data_session->crypto.key_count, msg_buf+SCUM_SYNC_REQ_LEN+SCUM_MSG_COUNT_LEN, SCUM_KEY_COUNT_LEN);
 
   // Clear data
-  memset(session->sync_bytes, 0, SCUM_SYNC_REQ_LEN);
+  memset(sync_session->sync_bytes, 0, SCUM_SYNC_REQ_LEN);
 
-  // Update sync session status
-  session->status = S_IDLE;
+  // Update status
+  ctx->status = S_IDLE;
 
   // Update data session
-  data_session->status = S_IDLE;
   ret = scum_derive_keys(&data_session->crypto);
   if (ret != 0) {
     mbedtls_printf("Post-sync key derivation failed");
-    return -4;
+    return ret;
   }
 
-  return 1;
+  return 0;
 }
 
 
@@ -702,32 +728,35 @@ void scum_setup(struct scum_ctx *ctx, char *sync_key, char *sync_salt, char *dat
 {
   int ret;
 
+  // Force-sync
+  if (sync == 1) {
+    ctx->status = S_IDLE;
+  } else {
+    ctx->status = S_UNSYNC;
+  }
+
   ret = scum_data_setup(&ctx->data_session, data_key, data_salt, app_buf, rad_buf);
-  if (ret != 0) {
+  if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Failed to initialize SCUM data session");
+  } else if (ret == S_FATAL_ERROR) {
+    mbedtls_printf("Fatal error initializing SCUM data session");
+    ctx->status = S_ERROR;
   }
 
   ret = scum_sync_setup(&ctx->sync_session, sync_key, sync_salt, rad_buf);
-  if (ret != 0) {
+  if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Failed to initialize SCUM sync session");
-  }
-
-  // Force-sync
-  if (sync == 1) {
-    ctx->synced = 1;
-    ctx->data_session.status = S_IDLE;
+  } else if (ret == S_FATAL_ERROR) {
+    mbedtls_printf("Fatal error initializaing SCUM sync session");
+    ctx->status = S_ERROR;
   }
 }
 
 // Initialize SCUM session states to prevent un-keyed handling
 void scum_init(struct scum_ctx *ctx)
 {
-  // Set unsynced
-  ctx->synced = 0;
-
-  // Set sessions as empty
-  ctx->data_session.status = S_UNSYNC;
-  ctx->sync_session.status = S_UNSYNC;
+  // Set session as unsynced
+  ctx->status = S_UNSYNC;
 
   // Clear crypto contexts
   mbedtls_gcm_init(&ctx->data_session.crypto.gcm);
@@ -748,8 +777,12 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data_buf, size_t
   int ret;
   
   ret = scum_check_frame(data_buf, data_len);
-  if (ret != 0) {
+  if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Received bad SCUM header");
+    return;
+  } else if (ret == S_FATAL_ERROR) {
+    mbedtls_printf("Received critically bad SCUM header");
+    ctx->status = S_ERROR;
     return;
   }
 
@@ -759,26 +792,34 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data_buf, size_t
   // Determine correct handling method
   switch (hdr->type) {
     case S_SYNC_REQ:
-      ret = scum_sync_req_handle(&ctx->sync_session, &ctx->data_session);
-      if (ret != 0) {
+      ret = scum_sync_req_handle(ctx);
+      if (ret == S_SOFT_ERROR) {
         mbedtls_printf("Failed to handle sync request");
-      } else {
+      } else if (ret == S_FATAL_ERROR) {
+        mbedtls_printf("Fatal error handling sync request");
+        ctx->status = S_ERROR;
+      } else if (ret != S_PASS) {
         mbedtls_printf("Sync request successfully handled");
       }
       break;
     case S_SYNC_RESP:
-      ret = scum_sync_resp_receive(&ctx->sync_session, &ctx->data_session);
-      if (ret < 0) {
+      ret = scum_sync_resp_receive(ctx);
+      if (ret == S_SOFT_ERROR) {
         mbedtls_printf("Failed to handle sync response"); // May have been response to other SED SYNC_REQ
-      } else if (ret == 1) {
-        ctx->synced = 1;
+      } else if (ret == S_FATAL_ERROR) {
+        mbedtls_printf("Fatal error handling sync response");
+        ctx->status = S_ERROR;
+      } else if (ret != S_PASS) {
         mbedtls_printf("Synchronized to SCUM data session");
       }
       break;
     case S_DATA:
-      ret = scum_data_receive(&ctx->data_session, src_id);
-      if (ret != 0) {
+      ret = scum_data_receive(ctx, src_id);
+      if (ret == S_SOFT_ERROR) {
         mbedtls_printf("Failed to handle data");
+      } else if (ret == S_FATAL_ERROR) {
+        mbedtls_printf("Fatal error handling data");
+        ctx->status = S_ERROR;
       }
       break;
   }
@@ -789,9 +830,12 @@ void scum_send(struct scum_ctx *ctx, size_t data_len)
 {
   int ret;
 
-  ret = scum_data_send(&ctx->data_session, data_len);
-  if (ret != 0) {
+  ret = scum_data_send(ctx, data_len);
+  if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Failed to send data");
+  } else if (ret == S_FATAL_ERROR) {
+    mbedtls_printf("Fatal error sending data");
+    ctx->status = S_ERROR;
   }
 }
 
@@ -800,8 +844,11 @@ void scum_sync(struct scum_ctx *ctx)
 {
   int ret;
 
-  ret = scum_sync_req_send(&ctx->sync_session);
-  if (ret != 0) {
+  ret = scum_sync_req_send(ctx);
+  if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Failed to send sync request");
+  } else if (ret == S_FATAL_ERROR) {
+    mbedtls_printf("Fatal error sending sync request");
+    ctx->status = S_ERROR;
   }
 }
