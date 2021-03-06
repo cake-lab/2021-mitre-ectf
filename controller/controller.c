@@ -33,7 +33,6 @@ static struct scum_ctx *scum_ctx_ref;
 mbedtls_hmac_drbg_context *aes_hmac_drbg_ref;
 char *cpu_buf_ref;
 char *scewl_buf_ref;
-static bool registered;
 
 
 // Backup SCEWL_MAX_DATA_SZ-sized buffer to the end of flash
@@ -203,7 +202,6 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
           entropy = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN*2 + 1;
 
           dtls_rekey(dtls_state, ca, msg->ca_len, crt, msg->crt_len, key, msg->key_len, true, true);
-          registered = true;
           mbedtls_printf("Registered.");
 
           // Setup runtime RNG state -- happens by default in SCUM
@@ -225,7 +223,6 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
         case SCEWL_SSS_DEREG:
           dtls_rekey_to_default(dtls_state, true, false);
           scum_init(scum_ctx_ref);
-          registered = false;
           mbedtls_printf("Deregistered.");
           break;
         default:
@@ -318,19 +315,6 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
   memset(buf, 0, len);
 }
 
-/*
- * Macro for complicated CPU buf read condition
- * Ignore CPU buf in any of these conditions:
- *    1. Already took CPU reg request
- *    2. Registered and SCUM unsynced
- *    3. Registered, SCUM synced, and handling some type of message
- */
-#define CANT_TAKE_CPU_MSG(reg, dtls, scum) (\
-  (!reg && (dtls != IDLE)) || \
-  (reg && (scum == S_UNSYNC || scum == S_WAIT_SYNC)) || \
-  (reg && (scum != S_UNSYNC && scum != S_WAIT_SYNC) && (dtls != IDLE || scum == S_RECV))\
-)
-
 int main() {
   struct dtls_state dtls_state;
   // heap memory for mbedtls
@@ -398,7 +382,7 @@ int main() {
 
     // handle outgoing message from CPU
     if (intf_avail(CPU_INTF)) {
-      if (CANT_TAKE_CPU_MSG(registered, dtls_state.status, scum_ctx.status)) {
+      if (dtls_state.status != IDLE || scum_ctx.status == S_WAIT_SYNC || scum_ctx.status == S_RECV) {
         mbedtls_printf("There is a message waiting on the CPU interface.");
       } else {
         // Read message from CPU
