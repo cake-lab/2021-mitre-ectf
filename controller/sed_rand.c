@@ -93,14 +93,16 @@ int sed_seed_request(void *in_data, unsigned char *output, size_t req_len)
   // Only perfom as many reseeds are there are seeds available
   if (req_count >= MAX_CALLS) {
     mbedtls_printf("Entropy has run out for an HMAC_DRBG instance");
-    while (1);
+    exit(1);
   }
 
   // First request should be full length, second request should be half length
   if (((req_count % 2) == 0) && (req_len != SEED_WIDTH)) {
-    return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+    mbedtls_printf("Unexpected entropy seed request length. Dying");
+    exit(1);
   } else if (((req_count % 2) == 1) && (req_len != SEED_WIDTH/2)) {
-    return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+    mbedtls_printf("Unexpected entropy seed request length. Dying");
+    exit(1);
   }
 
   // Copy the bytes
