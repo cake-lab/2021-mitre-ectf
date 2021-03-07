@@ -7,8 +7,6 @@
 #include "sed_rand.h"
 #include "sed_secrets.h"
 #include "mbedtls/platform.h"
-#include "mbedtls/entropy.h"
-#include "mbedtls/hmac_drbg.h"
 
 /*
  * Globals

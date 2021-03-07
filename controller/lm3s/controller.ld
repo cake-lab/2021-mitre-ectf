@@ -25,11 +25,13 @@
  *
  *****************************************************************************/
 
-_STACK_SIZE = 0xFBA0;
+_STACK_SIZE = 0xFB80;
+_FLASH_BUF_SIZE = 0x4000;
 
 MEMORY
 {
-    FLASH (rx) : ORIGIN = 0x00000000, LENGTH = 0x00040000
+    FLASH (rx) : ORIGIN = 0x00000000, LENGTH = 0x00034000
+    BUFS  (rx) : ORIGIN = 0x00034000, LENGTH = 0x0000C000
     SRAM (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00010000
 }
 
@@ -57,6 +59,18 @@ SECTIONS
     } > FLASH
 
     __end_code = .;
+
+    .flashbufs :
+    {
+        _flash_bufs_start = .;
+        _faa_buf_start = .;
+        . += _FLASH_BUF_SIZE;
+        _dtls_buf_start = .;
+        . += _FLASH_BUF_SIZE;
+        _scum_buf_start = .;
+        . += _FLASH_BUF_SIZE;
+        _flash_bufs_end = .;
+    } > BUFS
 
     .data : AT(__end_code)
     {

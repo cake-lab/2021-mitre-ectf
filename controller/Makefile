@@ -36,8 +36,12 @@ all: ${COMPILER}
 
 # for each source file that needs to be compiled besides
 # the file that defines `main`, add the next two lines 
+LDFLAGS+=${COMPILER}/scewl.o
+all: ${COMPILER}/scewl.o
 LDFLAGS+=${COMPILER}/interface.o
 all: ${COMPILER}/interface.o
+LDFLAGS+=${COMPILER}/flash_buffers.o
+all: ${COMPILER}/flash_buffers.o
 LDFLAGS+=${COMPILER}/sed_secrets.o
 all: ${COMPILER}/sed_secrets.o
 LDFLAGS+=${COMPILER}/sed_rand.o

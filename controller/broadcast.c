@@ -16,7 +16,6 @@
  */
 
 #include "broadcast.h"
-#include "controller.h"
 #include "mbedtls/cipher.h"
 #include "mbedtls/platform.h"
 
@@ -188,7 +187,7 @@ static int scum_crypto_setup(struct scum_crypto *crypto, char *key, char *salt, 
 }
 
 // Setup SCUM data session
-static int scum_data_setup(struct scum_data_session *session, char *key, char *salt, char *app_buf, char *rad_buf)
+static int scum_data_setup(struct scum_data_session *session, char *key, char *salt, char *stage_buf, struct flash_buf *app_fbuf)
 {
   int ret;
 
@@ -198,8 +197,8 @@ static int scum_data_setup(struct scum_data_session *session, char *key, char *s
   session->out_remaining = 0;
   session->out_msg_len = 0;
   session->recv_src_id = 0;
-  session->app_buf = app_buf;
-  session->rad_buf = rad_buf;
+  session->stage_buf = stage_buf;
+  session->app_fbuf = app_fbuf;
 
   // Set up crypto context
   ret = scum_crypto_setup(&session->crypto, key, salt, SCUM_DEFAULT_KDR);
@@ -212,12 +211,12 @@ static int scum_data_setup(struct scum_data_session *session, char *key, char *s
 }
 
 // Setup SCUM sync session
-static int scum_sync_setup(struct scum_sync_session *session, char *key, char *salt, char *rad_buf)
+static int scum_sync_setup(struct scum_sync_session *session, char *key, char *salt, char *stage_buf)
 {
   int ret;
 
   // Initialize session parameters
-  session->rad_buf = rad_buf;
+  session->stage_buf = stage_buf;
 
   // Initialize cryptographic primitives
   ret = rng_setup_runtime_pool(&session->rng, NULL, 0);
@@ -348,15 +347,13 @@ static int scum_absorb_frame(struct scum_crypto *crypto, char *data_buf, char *i
 
 
 // Send next data frame from app buffer to radio buffer
-static int scum_data_push(struct scum_data_session *session)
+static int scum_data_push(struct scum_data_session *session, char *data)
 {
   struct scum_hdr *hdr;
-  char *read_ptr;
-  char *write_ptr;
   int ret;
 
   // Construct header in output buffer
-  hdr = (struct scum_hdr *)session->rad_buf;
+  hdr = (struct scum_hdr *)session->stage_buf;
   hdr->type = S_DATA;
   hdr->seq_number = session->msg_count;
 
@@ -368,12 +365,8 @@ static int scum_data_push(struct scum_data_session *session)
     hdr->end_marker = 0;
   }
 
-  // Set up pointers
-  read_ptr = session->app_buf+(session->out_msg_len-session->out_remaining);
-  write_ptr = session->rad_buf;
-
   // Encrypt and send
-  ret = scum_push_frame(&session->crypto, read_ptr, write_ptr);
+  ret = scum_push_frame(&session->crypto, data, session->stage_buf);
   if (ret < 0) {
     mbedtls_printf("Failed to send SCUM frame");
     return ret;
@@ -397,7 +390,7 @@ static int scum_data_push(struct scum_data_session *session)
 }
 
 // Process outgoing broadcast message
-static int scum_data_send(struct scum_ctx *ctx, size_t data_len)
+static int scum_data_send(struct scum_ctx *ctx, char *data, size_t data_len)
 { 
   struct scum_data_session *session;
   int ret;
@@ -410,7 +403,7 @@ static int scum_data_send(struct scum_ctx *ctx, size_t data_len)
     session->out_msg_len = data_len;
 
     do {
-      ret = scum_data_push(session);
+      ret = scum_data_push(session, data+(session->out_msg_len-session->out_remaining));
       if (ret < 0) {
         mbedtls_printf("Failed to push SCUM data frame");
         ctx->status = S_IDLE;
@@ -420,7 +413,7 @@ static int scum_data_send(struct scum_ctx *ctx, size_t data_len)
     ctx->status = S_DONE;
   }
   if (ctx->status == S_DONE) {
-    mbedtls_printf("Sent broadcast: %.*s", session->out_msg_len, session->app_buf);
+    mbedtls_printf("Sent broadcast: %.*s", session->out_msg_len, data);
     ctx->status = S_IDLE;
   }
 
@@ -428,18 +421,13 @@ static int scum_data_send(struct scum_ctx *ctx, size_t data_len)
 }
 
 // Receive next data frame from radio buffer into app buffer
-static int scum_data_absorb(struct scum_ctx *ctx)
+static int scum_data_absorb(struct scum_data_session *session, char *data)
 {
-  struct scum_data_session *session;
   struct scum_hdr *hdr;
-  char *read_ptr;
-  char *write_ptr;
   int ret;
 
-  session = &ctx->data_session;
-
   // Get header
-  hdr = (struct scum_hdr *)session->rad_buf;
+  hdr = (struct scum_hdr *)data;
 
   // Make sure message can fit and is in sequence
   if (hdr->length + session->in_received > MAX_SCEWL_LEN) {
@@ -450,16 +438,15 @@ static int scum_data_absorb(struct scum_ctx *ctx)
     return S_SOFT_ERROR;
   }
 
-  // Set up pointers
-  read_ptr = session->rad_buf;
-  write_ptr = session->app_buf + session->in_received;
-
   // Decrypt and absorb
-  ret = scum_absorb_frame(&session->crypto, read_ptr, write_ptr);
+  ret = scum_absorb_frame(&session->crypto, data, session->stage_buf);
   if (ret < 0) {
     mbedtls_printf("Failed to decrypt SCUM frame");
     return ret;
   }
+
+  // Write to SCUM flash buffer -- if have received no bytes yet, request an erase
+  flash_write_buf(session->app_fbuf, session->stage_buf, ret, (session->in_received == 0 ? 1 : 0));
 
   // Update stream status
   session->in_received += ret;
@@ -479,7 +466,7 @@ static int scum_data_absorb(struct scum_ctx *ctx)
 }
 
 // Process incoming broadcast message
-static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id)
+static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data)
 {
   struct scum_data_session *session;
   int ret;
@@ -500,19 +487,20 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id)
     }
 
     // Handle the frame - check for error or end marker
-    ret = scum_data_absorb(ctx);
+    ret = scum_data_absorb(session, data);
     if (ret < 0) {
       mbedtls_printf("Failed to absorb SCUM data frame");
       ctx->status = S_IDLE;
       return ret;
     } else if (ret == 1) {
+      flash_commit_buf(session->app_fbuf);
       ctx->status = S_DONE;
     }
   }
   if (ctx->status == S_DONE) {
     // Send to CPU
-    handle_brdcst_recv((char *)session->app_buf, session->recv_src_id, session->in_received);
-    mbedtls_printf("Received broadcast from %d: %.*s", session->recv_src_id, session->in_received, session->app_buf);
+    handle_brdcst_recv(flash_get_buf(session->app_fbuf), session->recv_src_id, session->in_received);
+    mbedtls_printf("Received broadcast from %d: %.*s", session->recv_src_id, session->in_received, flash_get_buf(session->app_fbuf));
     ctx->status = S_IDLE;
   }
 
@@ -531,8 +519,6 @@ static int scum_sync_req_send(struct scum_ctx *ctx)
 {
   struct scum_sync_session *session;
   struct scum_hdr *hdr;
-  char *read_ptr;
-  char *write_ptr;
   int ret;
 
   session = &ctx->sync_session;
@@ -544,7 +530,7 @@ static int scum_sync_req_send(struct scum_ctx *ctx)
   }
 
   // Construct header in output buffer
-  hdr = (struct scum_hdr *)session->rad_buf;
+  hdr = (struct scum_hdr *)session->stage_buf;
   hdr->type = S_SYNC_REQ;
   hdr->seq_number = 0;
   hdr->length = SCUM_SYNC_REQ_LEN;
@@ -557,12 +543,8 @@ static int scum_sync_req_send(struct scum_ctx *ctx)
     return S_FATAL_ERROR;
   }
 
-  // Set up pointers
-  read_ptr = (char *)session->sync_bytes;
-  write_ptr = session->rad_buf;
-
   // Encrypt and send
-  ret = scum_push_frame(&session->crypto, read_ptr, write_ptr);
+  ret = scum_push_frame(&session->crypto, (char *)session->sync_bytes, session->stage_buf);
   if (ret < 0) {
     mbedtls_printf("Failed to send sync request frame");
     return ret;
@@ -575,22 +557,20 @@ static int scum_sync_req_send(struct scum_ctx *ctx)
 }
 
 // Process incoming sync request
-static int scum_sync_req_handle(struct scum_ctx *ctx)
+static int scum_sync_req_handle(struct scum_ctx *ctx, char *data)
 {
   struct scum_sync_session *sync_session;
   struct scum_data_session *data_session;
   struct scum_hdr *hdr;
   uint8_t msg_buf[SCUM_SYNC_RESP_LEN];
   uint32_t prev_key_count;
-  char *read_ptr;
-  char *write_ptr;
   int ret;
 
   sync_session = &ctx->sync_session;
   data_session = &ctx->data_session;
 
   // Get header
-  hdr = (struct scum_hdr *)sync_session->rad_buf;
+  hdr = (struct scum_hdr *)data;
 
   // Check if sync session is running
   switch (ctx->status) {
@@ -609,12 +589,8 @@ static int scum_sync_req_handle(struct scum_ctx *ctx)
     return S_SOFT_ERROR;
   }
 
-  // Set up pointers
-  read_ptr = sync_session->rad_buf;
-  write_ptr = (char *)msg_buf;
-
   // Decrypt
-  ret = scum_absorb_frame(&sync_session->crypto, read_ptr, write_ptr);
+  ret = scum_absorb_frame(&sync_session->crypto, data, (char *)msg_buf);
   if (ret < 0) {
     mbedtls_printf("Failed to decrypt SCUM frame");
     return ret;
@@ -626,18 +602,14 @@ static int scum_sync_req_handle(struct scum_ctx *ctx)
   memcpy(msg_buf+SCUM_SYNC_REQ_LEN+SCUM_MSG_COUNT_LEN, (uint8_t *)&prev_key_count, SCUM_KEY_COUNT_LEN);
 
   // Construct outgoing header
-  hdr = (struct scum_hdr *)sync_session->rad_buf;
+  hdr = (struct scum_hdr *)sync_session->stage_buf;
   hdr->type = S_SYNC_RESP;
   hdr->seq_number = 0;
   hdr->length = SCUM_SYNC_RESP_LEN;
   hdr->end_marker = 1;
 
-  // Set up pointers
-  read_ptr = (char *)msg_buf;
-  write_ptr = sync_session->rad_buf;
-
   // Encrypt and send
-  ret = scum_push_frame(&sync_session->crypto, read_ptr, write_ptr);
+  ret = scum_push_frame(&sync_session->crypto, (char *)msg_buf, sync_session->stage_buf);
   if (ret < 0) {
     mbedtls_printf("Failed to send SCUM frame");
     return ret;
@@ -647,14 +619,12 @@ static int scum_sync_req_handle(struct scum_ctx *ctx)
 }
 
 // Process incoming sync response
-static int scum_sync_resp_receive(struct scum_ctx *ctx)
+static int scum_sync_resp_receive(struct scum_ctx *ctx, char *data)
 {
   struct scum_sync_session *sync_session;
   struct scum_data_session *data_session;
   struct scum_hdr *hdr;
   uint8_t msg_buf[SCUM_SYNC_RESP_LEN];
-  char *read_ptr;
-  char *write_ptr;
   int ret;
 
   sync_session = &ctx->sync_session;
@@ -667,7 +637,7 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx)
   }
 
   // Get header
-  hdr = (struct scum_hdr *)sync_session->rad_buf;
+  hdr = (struct scum_hdr *)data;
 
   // Check message length
   if (hdr->length != SCUM_SYNC_RESP_LEN) {
@@ -675,12 +645,8 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx)
     return S_SOFT_ERROR;
   }
 
-  // Set up pointers
-  read_ptr = sync_session->rad_buf;
-  write_ptr = (char *)msg_buf;
-
   // Decrypt
-  ret = scum_absorb_frame(&sync_session->crypto, read_ptr, write_ptr);
+  ret = scum_absorb_frame(&sync_session->crypto, data, (char *)msg_buf);
   if (ret < 0) {
     mbedtls_printf("Failed to decrypt SCUM frame");
     return ret;
@@ -724,7 +690,7 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx)
 
 
 // Setup SCUM context
-void scum_setup(struct scum_ctx *ctx, char *sync_key, char *sync_salt, char *data_key, char *data_salt, char *app_buf, char *rad_buf, unsigned char sync)
+void scum_setup(struct scum_ctx *ctx, char *sync_key, char *sync_salt, char *data_key, char *data_salt, struct flash_buf *app_fbuf, unsigned char sync)
 {
   int ret;
 
@@ -735,7 +701,7 @@ void scum_setup(struct scum_ctx *ctx, char *sync_key, char *sync_salt, char *dat
     ctx->status = S_UNSYNC;
   }
 
-  ret = scum_data_setup(&ctx->data_session, data_key, data_salt, app_buf, rad_buf);
+  ret = scum_data_setup(&ctx->data_session, data_key, data_salt, ctx->stage_buf, app_fbuf);
   if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Failed to initialize SCUM data session");
   } else if (ret == S_FATAL_ERROR) {
@@ -743,7 +709,7 @@ void scum_setup(struct scum_ctx *ctx, char *sync_key, char *sync_salt, char *dat
     ctx->status = S_ERROR;
   }
 
-  ret = scum_sync_setup(&ctx->sync_session, sync_key, sync_salt, rad_buf);
+  ret = scum_sync_setup(&ctx->sync_session, sync_key, sync_salt, ctx->stage_buf);
   if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Failed to initialize SCUM sync session");
   } else if (ret == S_FATAL_ERROR) {
@@ -771,12 +737,12 @@ void scum_init(struct scum_ctx *ctx)
 }
 
 // Receive a SCUM message
-void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data_buf, size_t data_len)
+void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data, size_t data_len)
 {
   struct scum_hdr *hdr;
   int ret;
   
-  ret = scum_check_frame(data_buf, data_len);
+  ret = scum_check_frame(data, data_len);
   if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Received bad SCUM header");
     return;
@@ -787,12 +753,12 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data_buf, size_t
   }
 
   // Get header
-  hdr = (struct scum_hdr *)data_buf;
+  hdr = (struct scum_hdr *)data;
 
   // Determine correct handling method
   switch (hdr->type) {
     case S_SYNC_REQ:
-      ret = scum_sync_req_handle(ctx);
+      ret = scum_sync_req_handle(ctx, data);
       if (ret == S_SOFT_ERROR) {
         mbedtls_printf("Failed to handle sync request");
       } else if (ret == S_FATAL_ERROR) {
@@ -803,7 +769,7 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data_buf, size_t
       }
       break;
     case S_SYNC_RESP:
-      ret = scum_sync_resp_receive(ctx);
+      ret = scum_sync_resp_receive(ctx, data);
       if (ret == S_SOFT_ERROR) {
         mbedtls_printf("Failed to handle sync response"); // May have been response to other SED SYNC_REQ
       } else if (ret == S_FATAL_ERROR) {
@@ -814,7 +780,7 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data_buf, size_t
       }
       break;
     case S_DATA:
-      ret = scum_data_receive(ctx, src_id);
+      ret = scum_data_receive(ctx, src_id, data);
       if (ret == S_SOFT_ERROR) {
         mbedtls_printf("Failed to handle data");
       } else if (ret == S_FATAL_ERROR) {
@@ -826,11 +792,11 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data_buf, size_t
 }
 
 // Send a SCUM message
-void scum_send(struct scum_ctx *ctx, size_t data_len)
+void scum_send(struct scum_ctx *ctx, char *data, size_t data_len)
 {
   int ret;
 
-  ret = scum_data_send(ctx, data_len);
+  ret = scum_data_send(ctx, data, data_len);
   if (ret == S_SOFT_ERROR) {
     mbedtls_printf("Failed to send data");
   } else if (ret == S_FATAL_ERROR) {

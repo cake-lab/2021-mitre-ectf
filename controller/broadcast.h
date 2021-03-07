@@ -18,8 +18,9 @@
 #ifndef BROADCAST_H
 #define BROADCAST_H
 
-#include "controller.h"
+#include "scewl.h"
 #include "sed_rand.h"
+#include "flash_buffers.h"
 #include "mbedtls/aes.h"
 #include "mbedtls/gcm.h"
 #include <stdint.h>
@@ -115,15 +116,15 @@ struct scum_data_session {
   uint16_t out_remaining;
   uint16_t out_msg_len;
 
-  char *app_buf;
-  char *rad_buf;
+  char *stage_buf;
+  struct flash_buf *app_fbuf;
 };
 
 // SCUM sync session context
 struct scum_sync_session {
   struct scum_crypto crypto;
 
-  char *rad_buf;
+  char *stage_buf;
   
   mbedtls_hmac_drbg_context rng;
   uint8_t sync_bytes[SCUM_SYNC_REQ_LEN];
@@ -131,6 +132,7 @@ struct scum_sync_session {
 
 struct scum_ctx {
   enum scum_status status;
+  char stage_buf[SCUM_MTU];
   struct scum_data_session data_session;
   struct scum_sync_session sync_session;
 };
@@ -140,10 +142,10 @@ struct scum_ctx {
  * Function Prototypes
  */
 
-void scum_setup(struct scum_ctx *ctx, char *sync_key, char *sync_salt, char *data_key, char *data_salt, char *app_buf, char *rad_buf, unsigned char sync);
+void scum_setup(struct scum_ctx *ctx, char *sync_key, char *sync_salt, char *data_key, char *data_salt, struct flash_buf *app_fbuf, unsigned char sync);
 void scum_init(struct scum_ctx *ctx);
-void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data_buf, size_t data_len);
-void scum_send(struct scum_ctx *ctx, size_t data_len);
+void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data, size_t data_len);
+void scum_send(struct scum_ctx *ctx, char *data, size_t data_len);
 void scum_sync(struct scum_ctx *ctx);
 
 #endif // BROADCAST_H

@@ -6,6 +6,7 @@
 #include MBEDTLS_CONFIG_FILE
 #include "mbedtls/platform.h"
 #include "controller.h"
+#include "scewl.h"
 #include "sed_rand.h"
 #include "sed_secrets.h"
 #include "timers.h"
@@ -296,13 +297,14 @@ void dtls_config_runtime_rng(struct dtls_state *state) {
  * Initialize things that are common to the DTLS server and client.
  * This is called once.
  */
-void dtls_setup(struct dtls_state *state, char *message_buf) {
+void dtls_setup(struct dtls_state *state, struct flash_buf *message_fbuf) {
 	int ret;
 	char scewl_id_str[6];
 	int scewl_id_str_len;
 
 	state->status = IDLE;
-	state->server_state.message = message_buf;
+	state->server_state.message_fbuf = message_fbuf;
+	state->client_state.message_fbuf = message_fbuf;
 
 	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
 
@@ -484,7 +486,8 @@ static void dtls_client_feed(struct dtls_client_state *state, char *data, size_t
  * Do some processing for the server session.
  */
 static void dtls_server_run(struct dtls_server_state *server_state) {
-	int ret;
+	int ret, req_len;
+	unsigned char stage_buf[1000];
 
 	if (server_state->status == HANDSHAKE) {
 		ret = mbedtls_ssl_handshake(&server_state->ssl);
@@ -509,8 +512,12 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
 		}
 	} else if (server_state->status == READ) {
 		do {
-			ret = mbedtls_ssl_read(&server_state->ssl, (unsigned char *) &server_state->message[server_state->message_len], SCEWL_MAX_DATA_SZ - server_state->message_len);
+			// Read 1000 bytes or less at a time
+			req_len = (SCEWL_MAX_DATA_SZ - server_state->message_len >= 1000) ? 1000 : (SCEWL_MAX_DATA_SZ - server_state->message_len);
+			ret = mbedtls_ssl_read(&server_state->ssl, stage_buf, req_len);
 			if (ret > 0) {
+				// Write data to flash buffer -- if have received no bytes yet, request an erase
+				flash_write_buf(server_state->message_fbuf, (char *)stage_buf, ret, (server_state->message_len == 0 ? 1 : 0));
 				server_state->message_len += ret;
 			}
 		} while (ret > 0);
@@ -538,9 +545,11 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
 		mbedtls_ssl_close_notify(&server_state->ssl);
 		mbedtls_printf("done");
 		if (server_state->message_len > 0) {
-			mbedtls_printf("Received message from client %u: %.*s", (unsigned int) server_state->client_scewl_id, server_state->message_len, server_state->message);
+			// Write partial bytes to flash
+			flash_commit_buf(server_state->message_fbuf);
+			mbedtls_printf("Received message from client %u: %.*s", (unsigned int) server_state->client_scewl_id, server_state->message_len, flash_get_buf(server_state->message_fbuf));
 			// Hand off the received message to the CPU
-			handle_scewl_recv(server_state->message, server_state->client_scewl_id, server_state->message_len);
+			handle_scewl_recv(flash_get_buf(server_state->message_fbuf), server_state->client_scewl_id, server_state->message_len);
 		}
 	}
 }
@@ -549,7 +558,8 @@ static void dtls_server_run(struct dtls_server_state *server_state) {
  * Do some processing for the client session.
  */
 static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_state *state) {
-	int ret, pos;
+	int ret, pos, req_len;
+	unsigned char stage_buf[1000];
 	bool succeeded;
 
 	if (state->status == HANDSHAKE) {
@@ -593,13 +603,23 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 		}
 	} else if (state->status == READ) {
 		do {
-			ret = mbedtls_ssl_read(&state->ssl, (unsigned char *) &state->message[state->message_len], SCEWL_MAX_DATA_SZ - state->message_len);
+			// Read 1000 bytes or less at a time
+			req_len = (SCEWL_MAX_DATA_SZ - state->message_len >= 1000) ? 1000 : (SCEWL_MAX_DATA_SZ - state->message_len);
+			ret = mbedtls_ssl_read(&state->ssl, stage_buf, req_len);
 			if (ret > 0) {
+				// Write data to flash buffer -- if have received no bytes yet, request an erase
+				flash_write_buf(state->message_fbuf, (char *)stage_buf, ret, (state->message_len == 0 ? 1 : 0));
 				state->message_len += ret;
-				if (state->message_len >= sizeof(scewl_sss_msg_t)) {
-					scewl_sss_msg_t *msg = (scewl_sss_msg_t *) state->message;
+
+				// Check if all SSS registration data has been received
+				if (state->message_len >= sizeof(scewl_sss_msg_t)) { // Got enough bytes for a header
+					// If < 1000 bytes, use the memory buffer to check since final bytes may not be committed and read as 0xFF, otherwise use flash
+					scewl_sss_msg_t *msg = (scewl_sss_msg_t *) ((state->message_len <= 1000) ? (char *)stage_buf : flash_get_buf(state->message_fbuf));
+
 					if (state->message_len - sizeof(scewl_sss_msg_t) >= msg->ca_len + msg->crt_len + msg->key_len +
 							msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len) {
+						// Write partial bytes to flash
+						flash_commit_buf(state->message_fbuf);
 						state->status = DONE;
 						succeeded = true;
 						break;
@@ -643,7 +663,7 @@ static void dtls_client_run(struct dtls_state *dtls_state, struct dtls_client_st
 		} else if (state->channel == SSS) {
 			if (succeeded) {
 				mbedtls_printf("Received response.");
-				handle_sss_recv(dtls_state, state->message, state->message_len);
+				handle_sss_recv(dtls_state, flash_get_buf(state->message_fbuf), state->message_len);
 			} else {
 				mbedtls_printf("SSS transaction failed.");
 			}

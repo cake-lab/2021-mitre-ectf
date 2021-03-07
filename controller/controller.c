@@ -11,12 +11,14 @@
  */
 
 #include <stdarg.h>
-#include "controller.h"
+#include "scewl.h"
 #include "mbedtls/memory_buffer_alloc.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
 #include "broadcast.h"
+#include "dtls.h"
 #include "masked_aes.h"
+#include "flash_buffers.h"
 #include "timers.h"
 
 // Cannot include printf.h because it contains preprocessor defines that cause problems
@@ -25,153 +27,13 @@ int snprintf_(char *buffer, size_t count, const char *format, ...);
 int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
 
 #define send_str(M) send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, strlen(M), M)
+
 #define MAX_PRINTF_LENGTH 1000
 
 
 // Globals
 static struct scum_ctx *scum_ctx_ref;
 mbedtls_hmac_drbg_context *aes_hmac_drbg_ref;
-char *cpu_buf_ref;
-char *scewl_buf_ref;
-
-
-// Backup SCEWL_MAX_DATA_SZ-sized buffer to the end of flash
-// Each protocol has its own dedicated segment
-void backup_buf(char *buf, enum proto_type type)
-{
-  uint32_t start_address;
-  
-  if (type == DTLS) {
-    start_address = DTLS_BACKUP_START;
-  } else {
-    start_address = SCUM_BACKUP_START;
-  }
-
-  // Erase all subsequent pages
-  for (uint32_t i = 0; i < PAGES_PER_BUF; i++) {
-    FLASH_CTRL->FMA &= ~(FLASH_FMA_OFFSET_M); // Clear address field
-    FLASH_CTRL->FMA |= (start_address + (i*PAGE_SIZE)); // Write address field
-    FLASH_CTRL->FMC |= (FLASH_FMC_WRKEY | FLASH_FMC_ERASE_M); // Start erase
-    while (FLASH_CTRL->FMC & FLASH_FMC_ERASE_M); // Wait until erase bit is 0
-  }
-
-  // Write 32-bit words
-  for (uint32_t i = 0; i < WORDS_PER_BUF; i++) {
-    FLASH_CTRL->FMA &= ~(FLASH_FMA_OFFSET_M); // Clear address field
-    FLASH_CTRL->FMA |= (start_address + (i*4)); // Write address field
-    FLASH_CTRL->FMD = *((uint32_t *)(buf+i*4)); // Write 32 bits
-    FLASH_CTRL->FMC |= (FLASH_FMC_WRKEY | FLASH_FMC_WRITE_M); // Start write
-    while (FLASH_CTRL->FMC & FLASH_FMC_WRITE_M); // Wait until write bit is 0
-  }
-}
-
-// Restore SCEWL_MAX_DATA_SZ-sized buffer from the end of flash
-// Each protocol has its own dedicated segment
-void restore_buf(char *buf, enum proto_type type)
-{
-  uint32_t start_address;
-  
-  if (type == DTLS) {
-    start_address = DTLS_BACKUP_START;
-  } else {
-    start_address = SCUM_BACKUP_START;
-  }
-
-  // Copy 32-bit words
-  for (uint32_t i = 0; i < WORDS_PER_BUF; i++) {
-    *((uint32_t *)(buf+i*4)) = *((uint32_t *)(start_address+i*4));
-  }
-}
-
-// Read message header only
-int read_hdr(intf_t *intf, scewl_hdr_t *hdr, int blocking) {
-  int read;
-
-  // clear header
-  memset(hdr, 0, sizeof(scewl_hdr_t));
-
-  // find header start
-  do {
-    hdr->magicC = 0;
-
-    if (intf_read(intf, (char *)&hdr->magicS, 1, blocking) == INTF_NO_DATA) {
-      return SCEWL_NO_MSG;
-    }
-
-    // check for SC
-    if (hdr->magicS == 'S') {
-      do {
-        if (intf_read(intf, (char *)&hdr->magicC, 1, blocking) == INTF_NO_DATA) {
-          return SCEWL_NO_MSG;
-        }
-      } while (hdr->magicC == 'S'); // in case of multiple 'S's in a row
-    }
-  } while (hdr->magicS != 'S' && hdr->magicC != 'C');
-
-  // read rest of header
-  read = intf_read(intf, (char *)hdr + 2, sizeof(scewl_hdr_t) - 2, blocking);
-  if(read == INTF_NO_DATA) {
-    return SCEWL_NO_MSG;
-  }
-
-  return SCEWL_OK;
-}
-
-// Read message body only
-int read_body(intf_t *intf, scewl_hdr_t *hdr, char *data, size_t n, int blocking) {
-  int read, max;
-
-  // clear buffer and header
-  memset(data, 0, n);
-
-  if (intf == SSS_INTF) {
-    mbedtls_printf("Packet has payload length %hu.", hdr->len);
-  }
-
-  // read body
-  max = hdr->len < n ? hdr->len : n;
-  read = intf_read(intf, data, max, blocking);
-
-  // throw away rest of message if too long
-  for (int i = 0; hdr->len > max && i < hdr->len - max; i++) {
-    intf_readb(intf, 0);
-  }
-
-  // report if not blocking and full message not received
-  if(read == INTF_NO_DATA || read < max) {
-    return SCEWL_NO_MSG;
-  }
-
-  return max;
-}
-
-// Read full message
-int read_msg(intf_t *intf, scewl_hdr_t *hdr, char *data, size_t n, int blocking) {
-  if (read_hdr(intf, hdr, blocking) == SCEWL_NO_MSG) {
-    return SCEWL_NO_MSG;
-  }
-  return read_body(intf, hdr, data, n, blocking);
-}
-
-
-int send_msg(intf_t *intf, scewl_id_t src_id, scewl_id_t tgt_id, uint16_t len, const char *data) {
-  scewl_hdr_t hdr;
-
-  // pack header
-  hdr.magicS  = 'S';
-  hdr.magicC  = 'C';
-  hdr.src_id = src_id;
-  hdr.tgt_id = tgt_id;
-  hdr.len    = len;
-
-  // send header
-  intf_write(intf, (char *)&hdr, sizeof(scewl_hdr_t));
-
-  // send body
-  intf_write(intf, data, len);
-
-  return SCEWL_OK;
-}
 
 
 void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len) {
@@ -212,8 +74,7 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
           scum_setup(scum_ctx_ref,
                    (char *)sync_key, (char *)sync_salt,
                    (char *)data_key, (char *)data_salt,
-                   cpu_buf_ref, scewl_buf_ref,
-                   *first_sed);
+                   &SCUM_FBUF, *first_sed);
 
           if (scum_ctx_ref->status == S_UNSYNC) {
             scum_sync(scum_ctx_ref);
@@ -231,7 +92,7 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
       if (!illegal_len) {
         // forward message to CPU -- clear data except for device ID and op
         const uint16_t cpu_required_len = sizeof(msg->dev_id) + sizeof(msg->op);
-        memset((unsigned char *)data+cpu_required_len, 0, len - cpu_required_len);
+        // memset((unsigned char *)data+cpu_required_len, 0, len - cpu_required_len);
         send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, cpu_required_len, data);
         return;
       }
@@ -239,32 +100,6 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
   }
   mbedtls_printf("Received invalid response from SSS.");
 }
-
-
-int handle_scewl_recv(const char* data, scewl_id_t src_id, uint16_t len) {
-  return send_msg(CPU_INTF, src_id, SCEWL_ID, len, data);
-}
-
-
-int handle_brdcst_recv(const char* data, scewl_id_t src_id, uint16_t len) {
-  return send_msg(CPU_INTF, src_id, SCEWL_BRDCST_ID, len, data);
-}
-
-
-int handle_brdcst_send(const char *data, uint16_t len) {
-  return send_msg(RAD_INTF, SCEWL_ID, SCEWL_BRDCST_ID, len, data);
-}   
-
-
-int handle_faa_recv(const char* data, uint16_t len) {
-  return send_msg(CPU_INTF, SCEWL_FAA_ID, SCEWL_ID, len, data);
-}
-
-
-int handle_faa_send(const char* data, uint16_t len) {
-  return send_msg(RAD_INTF, SCEWL_ID, SCEWL_FAA_ID, len, data);
-}
-
 
 /*
  * Implementation of exit that works by causing a segmentation fault.
@@ -315,27 +150,24 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
   memset(buf, 0, len);
 }
 
+/*
+ * Main controller loop
+ */
 int main() {
   struct dtls_state dtls_state;
   // heap memory for mbedtls
   unsigned char memory_buf[30000];
   int len;
   scewl_hdr_t hdr;
-  // buffers for CPU and SCEWL packets
-  char cpu_buf[SCEWL_MAX_DATA_SZ];
+  // buffer for incoming SCEWL packets
   char scewl_buf[1000];
   struct scum_ctx scum_ctx;
   // RNG for masked AES
   mbedtls_hmac_drbg_context aes_hmac_drbg;
 
-  // Backup status
-  unsigned char scum_backed_up = 0, dtls_backed_up = 0;
-
   // Set global refs
   aes_hmac_drbg_ref = &aes_hmac_drbg;
   scum_ctx_ref = &scum_ctx;
-  cpu_buf_ref = cpu_buf;
-  scewl_buf_ref = scewl_buf;
 
   // initialize interfaces
   intf_init(CPU_INTF);
@@ -368,7 +200,7 @@ int main() {
   }
 
   // Setup / initialize protocols
-  dtls_setup(&dtls_state, cpu_buf);
+  dtls_setup(&dtls_state, &DTLS_FBUF);
   scum_init(&scum_ctx);
 
   // serve forever
@@ -380,79 +212,69 @@ int main() {
       dtls_check_timers(&dtls_state);
     }
 
-    // handle outgoing message from CPU
+    // Handle outgoing message from CPU
     if (intf_avail(CPU_INTF)) {
       if (dtls_state.status != IDLE || scum_ctx.status == S_WAIT_SYNC || scum_ctx.status == S_RECV) {
         mbedtls_printf("There is a message waiting on the CPU interface.");
       } else {
-        // Read message from CPU
-        mbedtls_printf("Receiving message on CPU interface.");
-        len = read_msg(CPU_INTF, &hdr, cpu_buf, sizeof(cpu_buf), 1);
-        mbedtls_printf("Received message from CPU.");
 
-        if (hdr.tgt_id == SCEWL_BRDCST_ID) {
-          scum_send(&scum_ctx, len);
-        } else if (hdr.tgt_id == SCEWL_SSS_ID) {
+        // Read header from CPU
+        mbedtls_printf("Receiving message on CPU interface.");
+        read_hdr(CPU_INTF, &hdr, 1);
+
+        if (hdr.tgt_id == SCEWL_BRDCST_ID) { // Send Broadcast
+
+          len = read_body_flash(CPU_INTF, &hdr, &SCUM_FBUF, SCEWL_MAX_DATA_SZ, 1);
+          scum_send(&scum_ctx, flash_get_buf(&SCUM_FBUF), len);
+
+        } else if (hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
+
+          len = read_body_flash(CPU_INTF, &hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
           mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
           dtls_rekey_to_default(&dtls_state, true, false);
-          dtls_send_message_to_sss(&dtls_state, cpu_buf, len);
-        } else if (hdr.tgt_id == SCEWL_FAA_ID) {
-          handle_faa_send(cpu_buf, len);
-        } else {
-          dtls_send_message(&dtls_state, hdr.tgt_id, cpu_buf, len);
+          dtls_send_message_to_sss(&dtls_state, flash_get_buf(&DTLS_FBUF), len);
+
+        } else if (hdr.tgt_id == SCEWL_FAA_ID) { // Send to FAA
+
+          len = read_body_flash(CPU_INTF, &hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
+          handle_faa_send(flash_get_buf(&FAA_FBUF), len);
+
+        } else { // Send Unicast
+
+          len = read_body_flash(CPU_INTF, &hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
+          dtls_send_message(&dtls_state, hdr.tgt_id, flash_get_buf(&DTLS_FBUF), len);
+
         }
       }
     }
 
     // handle incoming radio message
     if (intf_avail(RAD_INTF)) {
-      // Read message from antenna
+      // Read header from antenna
       read_hdr(RAD_INTF, &hdr, 1);
-      if (hdr.src_id == SCEWL_ID) { // ignore our own outgoing messages
+      if (hdr.src_id == SCEWL_ID) { // Ignore our own outgoing messages
         read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
       } else {
-        if (hdr.src_id == SCEWL_FAA_ID) {
-          // Receive FAA message into cpu_buf since could be max SCEWL length
-          if ((dtls_state.status != IDLE) && (!dtls_backed_up)) {
-            // Backup unicast
-            backup_buf(cpu_buf, DTLS);
-            dtls_backed_up = 1;
-          } else if ((scum_ctx.status == S_RECV) && (!scum_backed_up)) {
-            // Backup broadcast
-            backup_buf(cpu_buf, SCUM);
-            scum_backed_up = 1;
-          }
-          len = read_body(RAD_INTF, &hdr, cpu_buf, sizeof(cpu_buf), 1);
-          handle_faa_recv(cpu_buf, len);
-        } else if (hdr.tgt_id == SCEWL_BRDCST_ID) {
-          // Receive broadcast message
-          if ((dtls_state.status != IDLE) && (!dtls_backed_up)) {
-            // Backup unicast
-            backup_buf(cpu_buf, DTLS);
-            dtls_backed_up = 1;
-          }
-          if (scum_backed_up) {
-            // Restore broadcast
-            restore_buf(cpu_buf, SCUM);
-            scum_backed_up = 0;
-          }
+
+        if (hdr.src_id == SCEWL_FAA_ID) { // Handle FAA
+
+          len = read_body_flash(RAD_INTF, &hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
+          handle_faa_recv(flash_get_buf(&FAA_FBUF), len);
+
+        } else if (hdr.tgt_id == SCEWL_BRDCST_ID) { // Handle Broadcast
+
           len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
           scum_handle(&scum_ctx, hdr.src_id, scewl_buf, len);
-        } else if (hdr.tgt_id == SCEWL_ID) {
-          if ((scum_ctx.status == S_RECV) && (!scum_backed_up)) {
-            // Backup broadcast
-            backup_buf(cpu_buf, SCUM);
-            scum_backed_up = 1;
-          }
-          if (dtls_backed_up) {
-            // Restore unicast
-            restore_buf(cpu_buf, DTLS);
-            dtls_backed_up = 0;
-          }
+
+        } else if (hdr.tgt_id == SCEWL_ID) { // Handle Unicast
+
           len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
           dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
-        } else { // ignore messages for other devices
+
+        } else { // Ignore messages for other devices
+
           read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
+
         }
       }
     }
