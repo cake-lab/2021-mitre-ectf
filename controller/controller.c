@@ -160,7 +160,7 @@ int main() {
   int len;
   scewl_hdr_t hdr;
   // buffer for incoming SCEWL packets
-  char scewl_buf[1000];
+  char scewl_buf[SCEWL_MTU];
   struct scum_ctx scum_ctx;
   // RNG for masked AES
   mbedtls_hmac_drbg_context aes_hmac_drbg;
@@ -256,7 +256,7 @@ int main() {
         read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
       } else {
 
-        if (hdr.src_id == SCEWL_FAA_ID) { // Handle FAA
+        if ((hdr.src_id == SCEWL_FAA_ID) && ((hdr.tgt_id == SCEWL_ID) || (hdr.tgt_id == SCEWL_BRDCST_ID))) { // Handle FAA
 
           len = read_body_flash(RAD_INTF, &hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
           handle_faa_recv(flash_get_buf(&FAA_FBUF), len);

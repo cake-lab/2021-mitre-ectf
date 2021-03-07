@@ -14,7 +14,6 @@
 
 #define HS_TIMEOUT_MS_MIN 7000
 #define HS_TIMEOUT_MS_MAX 60000
-#define SCEWL_MTU 1000
 #define DTLS_OVERHEAD 77 //65 for DTLS 1.0
 
 

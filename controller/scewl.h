@@ -22,6 +22,7 @@
 #include <string.h>
 
 #define SCEWL_MAX_DATA_SZ 0x4000
+#define SCEWL_MTU 1000
 
 // type of a SCEWL ID
 typedef uint16_t scewl_id_t;

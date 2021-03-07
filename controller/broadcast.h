@@ -30,8 +30,6 @@
  * Definitions
  */
 
-#define MAX_SCEWL_LEN 0x4000
-
 // Secrets
 #define S_KEY_LEN (256/8)
 #define S_SALT_LEN (96/8)
@@ -39,13 +37,10 @@
 // Cipher properties
 #define CIPHER_BLOCK_LEN (128/8)
 
-// SCUM fields and limits
-#define SCUM_MTU 1000
-
 #define SCUM_IV_LEN (96/8)
 #define SCUM_TAG_LEN (128/8)
 #define SCUM_HDR_LEN (sizeof(struct scum_hdr))
-#define SCUM_MAX_DATA_LEN (SCUM_MTU - SCUM_HDR_LEN - SCUM_TAG_LEN)
+#define SCUM_MAX_DATA_LEN (SCEWL_MTU - SCUM_HDR_LEN - SCUM_TAG_LEN)
 
 #define SCUM_MSG_COUNT_LEN (sizeof(uint64_t))
 #define SCUM_KEY_COUNT_LEN (sizeof(uint32_t))
@@ -53,7 +48,7 @@
 #define SCUM_SYNC_RESP_LEN (2*SCUM_SYNC_REQ_LEN)
 
 // Key parameters
-#define FRAMES_PER_MSG (MAX_SCEWL_LEN/SCUM_MAX_DATA_LEN)
+#define FRAMES_PER_MSG (SCEWL_MAX_DATA_SZ/SCUM_MAX_DATA_LEN)
 #define SCUM_DEFAULT_KDR (1000*FRAMES_PER_MSG) // x * 17frames/msg
 
 /*
@@ -132,7 +127,7 @@ struct scum_sync_session {
 
 struct scum_ctx {
   enum scum_status status;
-  char stage_buf[SCUM_MTU];
+  char stage_buf[SCEWL_MTU];
   struct scum_data_session data_session;
   struct scum_sync_session sync_session;
 };

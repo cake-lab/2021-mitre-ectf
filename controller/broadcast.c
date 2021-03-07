@@ -50,8 +50,8 @@ static int scum_check_frame(char *data_buf, size_t data_len)
   if (data_len < SCUM_HDR_LEN) {
     mbedtls_printf("Incoming SCEWL data too short for full SCUM header");
     return S_SOFT_ERROR;
-  } else if (data_len > SCUM_MTU) {
-    mbedtls_printf("Incoming SCEWL data longer than SCUM MTU");
+  } else if (data_len > SCEWL_MTU) {
+    mbedtls_printf("Incoming SCEWL data longer than SCEWL MTU");
     return S_SOFT_ERROR;
   } else if (SCUM_HDR_LEN + hdr->length + SCUM_TAG_LEN != data_len) {
     mbedtls_printf("Incoming SCUM and SCEWL lengths are not compatible");
@@ -430,8 +430,8 @@ static int scum_data_absorb(struct scum_data_session *session, char *data)
   hdr = (struct scum_hdr *)data;
 
   // Make sure message can fit and is in sequence
-  if (hdr->length + session->in_received > MAX_SCEWL_LEN) {
-    mbedtls_printf("Attempted to receive more than MAX_SCEWL_LEN bytes");
+  if (hdr->length + session->in_received > SCEWL_MAX_DATA_SZ) {
+    mbedtls_printf("Attempted to receive more than SCEWL_MAX_DATA_SZ bytes");
     return S_SOFT_ERROR;
   } else if (hdr->seq_number < session->msg_count) {
     mbedtls_printf("Attempted to receive message with earlier sequence number");
