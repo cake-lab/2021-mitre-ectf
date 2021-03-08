@@ -154,14 +154,17 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
  * Main controller loop
  */
 int main() {
-  struct dtls_state dtls_state;
-  // heap memory for mbedtls
-  unsigned char memory_buf[30000];
-  int len;
-  scewl_hdr_t hdr;
-  // buffer for incoming SCEWL packets
+  
+  // Heap memory for mbedtls
+  unsigned char memory_buf[40000];
+  // Buffer for incoming SCEWL packets
   char scewl_buf[SCEWL_MTU];
+  // Scewl message info
+  scewl_hdr_t hdr;
+  int len;
+  // Communication protocols
   struct scum_ctx scum_ctx;
+  struct dtls_state dtls_state;
   // RNG for masked AES
   mbedtls_hmac_drbg_context aes_hmac_drbg;
 
