@@ -1,6 +1,6 @@
 /*
  * Author: Jake Grycel - jtgrycel@wpi.edu
- * Description: Timer configuration module for DTLS timing requirements
+ * Description: Timer configuration module for DTLS and SCUM timing requirements
  */
 
 #include "dtls.h"
@@ -11,6 +11,7 @@
  */
 
 unsigned char fin_timer_event = 0;
+unsigned char sync_timer_event = 0;
 static struct dtls_timers *sw_timer_ref;
 
 
@@ -72,6 +73,20 @@ void Timer1A_IRQHandler(void)
   }
 }
 
+// Sync Timer
+void Timer2A_IRQHandler(void)
+{
+  // Check for correct interrupt
+  if (SYNC_TIMER->MIS & TA_INT_BIT){
+    // Clear interrupt signal
+    NVIC_ClearPendingIRQ(Timer2A_IRQn);
+    SYNC_TIMER->ICR |= TA_INT_BIT;
+
+    // Set global flag
+    sync_timer_event = 1;
+  }
+}
+
 
 /*
  * External Functions
@@ -126,4 +141,25 @@ int timers_get_delay(void *data)
     return 1;
   }
   return 0;
+}
+
+// Function used by SCUM to configure a synq request timeout
+void timers_set_sync_timeout(uint32_t ms)
+{
+  uint32_t load_val;
+
+  // Immediately disable running HW timers
+  disable_hw_timer(SYNC_TIMER);
+
+  // Clear interrupt state
+  sync_timer_event = 0;
+
+  // Configure new timer state
+  if (ms <= MAX_MS_VAL) {
+    // Calculate timer load value
+    load_val = ms * TICKS_PER_MS;
+
+    // Finally, configure the HW timer
+    config_hw_timer(SYNC_TIMER, load_val);
+  }
 }

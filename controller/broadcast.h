@@ -51,6 +51,9 @@
 #define FRAMES_PER_MSG (SCEWL_MAX_DATA_SZ/SCUM_MAX_DATA_LEN)
 #define SCUM_DEFAULT_KDR (1000*FRAMES_PER_MSG) // x * 17frames/msg
 
+// Timing requirements
+#define SYNC_REQ_TIMEOUT 10000 // 10 seconds
+
 /*
  * Custom Types/Structs
  */
@@ -142,5 +145,6 @@ void scum_init(struct scum_ctx *ctx);
 void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data, size_t data_len);
 void scum_send(struct scum_ctx *ctx, char *data, size_t data_len);
 void scum_sync(struct scum_ctx *ctx);
+void scum_timeout(struct scum_ctx *ctx);
 
 #endif // BROADCAST_H

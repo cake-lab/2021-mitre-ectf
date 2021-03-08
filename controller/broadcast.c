@@ -16,6 +16,7 @@
  */
 
 #include "broadcast.h"
+#include "timers.h"
 #include "mbedtls/cipher.h"
 #include "mbedtls/platform.h"
 
@@ -575,10 +576,10 @@ static int scum_sync_req_send(struct scum_ctx *ctx)
 
   session = &ctx->sync_session;
 
-  // Check if sync is needed
-  if (ctx->status != S_UNSYNC) {
-    mbedtls_printf("Tried sending a sync request outside of fully unsynced state");
-    return S_SOFT_ERROR;
+  // Proceed if not disabled
+  if (ctx->status == S_ERROR) {
+    mbedtls_printf("Refusing to send a sync request while in error state");
+    return S_PASS;
   }
 
   // Construct header in output buffer
@@ -605,6 +606,9 @@ static int scum_sync_req_send(struct scum_ctx *ctx)
   // Update status
   ctx->status = S_WAIT_SYNC;
 
+  // Setup hardware timer
+  timers_set_sync_timeout(SYNC_REQ_TIMEOUT);
+
   return 0;
 }
 
@@ -624,15 +628,10 @@ static int scum_sync_req_handle(struct scum_ctx *ctx, char *data)
   // Get header
   hdr = (struct scum_hdr *)data;
 
-  // Check if sync session is running
-  switch (ctx->status) {
-    case S_ERROR:
-    case S_UNSYNC:
-    case S_WAIT_SYNC:
-      mbedtls_printf("Ignoring sync request message");
+  // Only handle request when idle
+  if (ctx->status != S_IDLE) {
+    mbedtls_printf("Ignoring sync request message");
       return S_PASS;
-    default:
-      break;
   }
 
   // Check message length
@@ -710,6 +709,8 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx, char *data)
     mbedtls_printf("Received incorrect sync bytes in synq response");
     return S_SOFT_ERROR;
   }
+
+  // Disable
 
   // Copy message and key counts
   memcpy((uint8_t *)&data_session->msg_count, msg_buf+SCUM_SYNC_REQ_LEN, SCUM_MSG_COUNT_LEN);
@@ -819,7 +820,7 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data, size_t dat
     case S_SYNC_RESP:
       ret = scum_sync_resp_receive(ctx, data);
       if (ret == S_SOFT_ERROR) {
-        mbedtls_printf("Failed to handle sync response"); // May have been response to other SED SYNC_REQ
+        mbedtls_printf("Failed to handle sync response"); // May have been response to other SED or old sync request
       } else if (ret == S_FATAL_ERROR) {
         mbedtls_printf("Fatal error handling sync response");
         scum_fatal_error(ctx);
@@ -864,5 +865,14 @@ void scum_sync(struct scum_ctx *ctx)
   } else if (ret == S_FATAL_ERROR) {
     mbedtls_printf("Fatal error sending sync request");
     scum_fatal_error(ctx);
+  }
+}
+
+// Handle a SCUM sync timeout
+void scum_timeout(struct scum_ctx *ctx)
+{
+  // If waiting for a sync response, send again -- else ignore
+  if (ctx->status == S_WAIT_SYNC) {
+    scum_sync(ctx);
   }
 }

@@ -224,10 +224,14 @@ int main() {
   // serve forever
   while (1) {
 
-    // Handle final timer expiration
+    // Handle timer events
     if (fin_timer_event) {
       fin_timer_event = 0;
       dtls_check_timers(&dtls_state);
+    }
+    if (sync_timer_event) {
+      sync_timer_event = 0;
+      scum_timeout(&scum_ctx);
     }
 
     // Handle outgoing message from CPU
