@@ -199,10 +199,12 @@ int main(void) {
     fprintf(log, "Sending unicast message...\n");
     scewl_send(TGT_ID, strlen(messages[i]) + 1, messages[i]);
 
-    // receive response (block until response received)
-    fprintf(log, "Waiting for response...\n");
-    memset(data, 0, BUF_SZ);
-    scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
+    do {
+      // receive response (block until response received)
+      fprintf(log, "Waiting for response...\n");
+      memset(data, 0, BUF_SZ);
+      scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
+    } while (tgt_id != SCEWL_ID);
 
     // check if response matches
     if (!strcmp(messages[i], data)) {
@@ -215,10 +217,12 @@ int main(void) {
     fprintf(log, "Sending broadcast message...\n");
     scewl_brdcst(strlen(messages[i]) + 1, messages[i]);
 
-    // receive response (block until response received)
-    fprintf(log, "Waiting for response...\n");
-    memset(data, 0, BUF_SZ);
-    scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
+    do {
+      // receive response (block until response received)
+      fprintf(log, "Waiting for response...\n");
+      memset(data, 0, BUF_SZ);
+      scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
+    } while (tgt_id != SCEWL_ID);
 
     // check if response matches
     if (!strcmp(messages[i], data)) {
@@ -231,10 +235,12 @@ int main(void) {
     fprintf(log, "Sending FAA message...\n");
     scewl_send(SCEWL_FAA_ID, strlen(messages[i]) + 1, messages[i]);
 
-    // receive response (block until response received)
-    fprintf(log, "Waiting for response...\n");
-    memset(data, 0, BUF_SZ);
-    scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
+    do {
+      // receive response (block until response received)
+      fprintf(log, "Waiting for response...\n");
+      memset(data, 0, BUF_SZ);
+      scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
+    } while (tgt_id != SCEWL_ID);
 
     // check if response matches
     if (!strcmp(messages[i], data)) {
@@ -267,6 +273,7 @@ int main(void) {
     }
   }
 
+  #if SCEWL_ID == 11
   if (failure) {
     fprintf(log, "FAILURE\n");
     return 1;
@@ -274,4 +281,5 @@ int main(void) {
     fprintf(log, "SUCCESS\n");
     return 0;
   }
+  #endif
 }
