@@ -26,9 +26,9 @@
  * Function Prototypes
  */
 
-void rng_load_runtime_pool(unsigned char *pool, int len);
-int rng_setup_runtime_pool(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len);
-int rng_setup_initial_pool(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len);
+int rng_setup(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len);
+void rng_setup_runtime_pool(unsigned char *pool, int len);
+void rng_clear_runtime_pool(void);
 int sed_seed_request(void *in_data, unsigned char *output, size_t req_len);
 
 #endif // SED_RAND_H

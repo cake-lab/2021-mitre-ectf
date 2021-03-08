@@ -18,17 +18,6 @@ static int rd_addr = 0;
 
 
 /*
- * Copy runtime seed pool
- */
-void rng_load_runtime_pool(unsigned char *pool, int len) {
-  if (len != ENTROPY_POOL_SIZE) {
-    mbedtls_printf("Incorrect pool size provided");
-    return;
-  }
-  memcpy(runtime_seed_pool, pool, len);
-}
-
-/*
  * Configure an HMAC_DRBG instance for appropriate NIST-compliant random generation
  */
 int rng_setup(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len)
@@ -59,25 +48,35 @@ int rng_setup(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, siz
 }
 
 /*
- * Switch to runtime source
+ * Switch to runtime source -- RNG instances should be re-initialized AFTER calling this
  */
-int rng_setup_runtime_pool(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len)
-{
+void rng_setup_runtime_pool(unsigned char *pool, int len) {
+  if (len != ENTROPY_POOL_SIZE) {
+    mbedtls_printf("Incorrect pool size provided");
+    exit(1);
+  }
+
+  // Load runtime pool 
+  memcpy(runtime_seed_pool, pool, len);
+
+  // Reset variables
   pool_ptr = runtime_seed_pool;
   req_count = 0;
   rd_addr = 0;
-  return rng_setup(hmac_drbg, pers_str, pers_len);
 }
 
 /*
- * Switch to built-in provision source
+ * Switch to built-in provision source -- RNG instances should be re-initialized AFTER calling this
  */
-int rng_setup_initial_pool(mbedtls_hmac_drbg_context *hmac_drbg, unsigned char *pers_str, size_t pers_len)
+void rng_clear_runtime_pool(void)
 {
+  // Clear runtime pool
+  memset(runtime_seed_pool, 0, ENTROPY_POOL_SIZE);
+
+  // Reset variables
   pool_ptr = (unsigned char *)initial_seed_pool;
   req_count = 0;
   rd_addr = 0;
-  return rng_setup(hmac_drbg, pers_str, pers_len);
 }
 
 /*

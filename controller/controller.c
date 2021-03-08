@@ -35,72 +35,6 @@ int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
 static struct scum_ctx *scum_ctx_ref;
 mbedtls_hmac_drbg_context *aes_hmac_drbg_ref;
 
-
-void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len) {
-  scewl_sss_msg_t *msg;
-  const unsigned char *ca, *crt, *key, *sync_key, *sync_salt, *data_key, *data_salt, *first_sed, *entropy;
-  uint8_t illegal_len = 0;
-
-  if (len >= sizeof(scewl_sss_msg_t)) {
-    msg = (scewl_sss_msg_t *) data;
-    if (msg->ca_len + msg->crt_len + msg->key_len + msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len == len - sizeof(scewl_sss_msg_t)) {
-      switch (msg->op) {
-        case SCEWL_SSS_REG:
-
-          // Check for correct SCUM data length
-          if (msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len != S_KEY_LEN*2 + S_SALT_LEN*2 + 1 + ENTROPY_POOL_SIZE) {
-            illegal_len = 1;
-            break;
-          }
-
-          ca = (const unsigned char *) data + sizeof(scewl_sss_msg_t);
-          crt = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len;
-          key = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len + msg->crt_len;
-          sync_key = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len + msg->crt_len + msg->key_len;
-          sync_salt = (const unsigned char *) sync_key + S_KEY_LEN;
-          data_key = (const unsigned char *) sync_key + S_KEY_LEN + S_SALT_LEN;
-          data_salt = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN;
-          first_sed = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN*2;
-          entropy = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN*2 + 1;
-
-          dtls_rekey(dtls_state, ca, msg->ca_len, crt, msg->crt_len, key, msg->key_len, true, true);
-          mbedtls_printf("Registered.");
-
-          // Setup runtime RNG state -- happens by default in SCUM
-          rng_load_runtime_pool((unsigned char *)entropy, msg->entropy_len);
-          dtls_config_runtime_rng(dtls_state);
-          Masked_AES_RNG_Setup(aes_hmac_drbg_ref, 1/*runtime*/);
-
-          scum_setup(scum_ctx_ref,
-                   (char *)sync_key, (char *)sync_salt,
-                   (char *)data_key, (char *)data_salt,
-                   &SCUM_FBUF, *first_sed);
-
-          if (scum_ctx_ref->status == S_UNSYNC) {
-            scum_sync(scum_ctx_ref);
-            mbedtls_printf("Sent SCUM sync request...");
-          }
-          break;
-        case SCEWL_SSS_DEREG:
-          dtls_rekey_to_default(dtls_state, true, false);
-          scum_init(scum_ctx_ref);
-          mbedtls_printf("Deregistered.");
-          break;
-        default:
-          mbedtls_printf("Received response from SSS with invalid status.");
-      }
-      if (!illegal_len) {
-        // forward message to CPU -- clear data except for device ID and op
-        const uint16_t cpu_required_len = sizeof(msg->dev_id) + sizeof(msg->op);
-        // memset((unsigned char *)data+cpu_required_len, 0, len - cpu_required_len);
-        send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, cpu_required_len, data);
-        return;
-      }
-    }
-  }
-  mbedtls_printf("Received invalid response from SSS.");
-}
-
 /*
  * Implementation of exit that works by causing a segmentation fault.
  * Copied from lm3s/startup_gcc.c
@@ -151,6 +85,87 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
 }
 
 /*
+ * Handle registration / deregistratio
+ * Re-keys communication protocols and re-configures RNG modules
+ */
+void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len) {
+  scewl_sss_msg_t *msg;
+  const unsigned char *ca, *crt, *key, *sync_key, *sync_salt, *data_key, *data_salt, *first_sed, *entropy;
+  uint8_t illegal_len = 0;
+
+  if (len >= sizeof(scewl_sss_msg_t)) {
+    msg = (scewl_sss_msg_t *) data;
+    if (msg->ca_len + msg->crt_len + msg->key_len + msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len == len - sizeof(scewl_sss_msg_t)) {
+      switch (msg->op) {
+        case SCEWL_SSS_REG:
+
+          // Check for correct SCUM data length
+          if (msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len != S_KEY_LEN*2 + S_SALT_LEN*2 + 1 + ENTROPY_POOL_SIZE) {
+            illegal_len = 1;
+            break;
+          }
+
+          ca = (const unsigned char *) data + sizeof(scewl_sss_msg_t);
+          crt = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len;
+          key = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len + msg->crt_len;
+          sync_key = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len + msg->crt_len + msg->key_len;
+          sync_salt = (const unsigned char *) sync_key + S_KEY_LEN;
+          data_key = (const unsigned char *) sync_key + S_KEY_LEN + S_SALT_LEN;
+          data_salt = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN;
+          first_sed = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN*2;
+          entropy = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN*2 + 1;
+
+          dtls_rekey(dtls_state, ca, msg->ca_len, crt, msg->crt_len, key, msg->key_len, true, true);
+          mbedtls_printf("Registered.");
+
+          // Setup runtime RNG state -- happens by default in SCUM
+          rng_setup_runtime_pool((unsigned char *)entropy, msg->entropy_len);
+          dtls_setup_rng(dtls_state);
+          if (Masked_AES_RNG_Setup(aes_hmac_drbg_ref) != 0) {
+            mbedtls_printf("Error setting up masked AES rng. Entering death loop.");
+            exit(1);
+          }
+          Masked_AES_RNG_Setup(aes_hmac_drbg_ref);
+          // Configure SCUM
+          scum_setup(scum_ctx_ref,
+                   (char *)sync_key, (char *)sync_salt,
+                   (char *)data_key, (char *)data_salt,
+                   &SCUM_FBUF, *first_sed);
+
+          if (scum_ctx_ref->status == S_UNSYNC) {
+            scum_sync(scum_ctx_ref);
+            mbedtls_printf("Sent SCUM sync request...");
+          }
+          break;
+        case SCEWL_SSS_DEREG:
+          dtls_rekey_to_default(dtls_state, true, false);
+          // Setup initial RNG state
+          rng_clear_runtime_pool();
+          dtls_setup_rng(dtls_state);
+          if (Masked_AES_RNG_Setup(aes_hmac_drbg_ref) != 0) {
+            mbedtls_printf("Error setting up masked AES rng. Entering death loop.");
+            exit(1);
+          }
+          // Clear SCUM
+          scum_init(scum_ctx_ref);
+          mbedtls_printf("Deregistered.");
+          break;
+        default:
+          mbedtls_printf("Received response from SSS with invalid status.");
+      }
+      if (!illegal_len) {
+        // forward message to CPU -- clear data except for device ID and op
+        const uint16_t cpu_required_len = sizeof(msg->dev_id) + sizeof(msg->op);
+        // memset((unsigned char *)data+cpu_required_len, 0, len - cpu_required_len);
+        send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, cpu_required_len, data);
+        return;
+      }
+    }
+  }
+  mbedtls_printf("Received invalid response from SSS.");
+}
+
+/*
  * Main controller loop
  */
 int main() {
@@ -197,9 +212,9 @@ int main() {
   mbedtls_printf("Hello, world! This is from main.");
 
   // Set up mask generation
-  if (Masked_AES_RNG_Setup(&aes_hmac_drbg, 0/*initial*/) != 0) {
+  if (Masked_AES_RNG_Setup(&aes_hmac_drbg) != 0) {
     mbedtls_printf("Error setting up masked AES rng. Entering death loop.");
-    while (1);
+    exit(1);
   }
 
   // Setup / initialize protocols

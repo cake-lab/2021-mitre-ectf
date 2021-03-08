@@ -274,9 +274,9 @@ void dtls_rekey_to_default(struct dtls_state *state, bool free_existing, bool ve
 }
 
 /*
- * Switch to the runtime entropy source for the RNG.
+ * Re-configure RNG during registration/deregistration
  */
-void dtls_config_runtime_rng(struct dtls_state *state) {
+void dtls_setup_rng(struct dtls_state *state) {
 	int ret;
 	char scewl_id_str[6];
 	int scewl_id_str_len;
@@ -284,13 +284,12 @@ void dtls_config_runtime_rng(struct dtls_state *state) {
 	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
 
 	mbedtls_hmac_drbg_init(&state->hmac_drbg);
-	ret = rng_setup_runtime_pool(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
+	ret = rng_setup(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if(ret != 0) {
 		dtls_fatal_error(state, ret);
 		return;
 	}
 }
-
 
 /*
  * Initialize things that are common to the DTLS server and client.
@@ -318,7 +317,7 @@ void dtls_setup(struct dtls_state *state, struct flash_buf *message_fbuf) {
 	mbedtls_printf("ok");
 
 	// Set up RNG
-	ret = rng_setup_initial_pool(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
+	ret = rng_setup(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
 	if(ret != 0) {
 		dtls_fatal_error(state, ret);
 		return;

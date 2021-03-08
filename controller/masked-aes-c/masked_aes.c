@@ -849,7 +849,7 @@ static void InvCipher(state_t *state, const uint8_t *RoundKey)
 /*****************************************************************************/
 
 // mbedtls hmac_drbg reference set and context initialization
-int Masked_AES_RNG_Setup(mbedtls_hmac_drbg_context *hmac_drbg_ref, char runtime)
+int Masked_AES_RNG_Setup(mbedtls_hmac_drbg_context *hmac_drbg_ref)
 {
     int ret;
 
@@ -858,12 +858,7 @@ int Masked_AES_RNG_Setup(mbedtls_hmac_drbg_context *hmac_drbg_ref, char runtime)
 
     // Initialize RNG
     mbedtls_hmac_drbg_init(hmac_drbg);
-    if (runtime == 0) {
-        ret = rng_setup_initial_pool(hmac_drbg, NULL, 0);
-    } else {
-        ret = rng_setup_runtime_pool(hmac_drbg, NULL, 0);
-    }
-    
+    ret = rng_setup(hmac_drbg, NULL, 0);
     if (ret != 0)
         mbedtls_hmac_drbg_free(hmac_drbg);
     return ret;

@@ -54,7 +54,7 @@ struct AES_ctx
 typedef uint8_t state_t[4][4];
 
 // RNG setup
-int Masked_AES_RNG_Setup(mbedtls_hmac_drbg_context *hmac_drbg_ref, char runtime);
+int Masked_AES_RNG_Setup(mbedtls_hmac_drbg_context *hmac_drbg_ref);
 
 void AES_init_ctx(struct AES_ctx* ctx, const uint8_t* key);
 #if (defined(CBC) && (CBC == 1)) || (defined(CTR) && (CTR == 1))
