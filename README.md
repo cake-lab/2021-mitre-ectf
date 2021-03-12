@@ -12,3 +12,7 @@ The code is structured the same as the example code, which is as follows:
 * `socks/` - Directory to hold sockets for the network backend
 * `tools/` - Miscellaneous tools to run and interract with deployments
 * `Makefile` - Root Makefile to build deployments
+
+## Documentation
+
+[Unicast and SSS communications](docs/dtls.md)

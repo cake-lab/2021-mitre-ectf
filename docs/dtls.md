@@ -33,3 +33,13 @@ The SSS uses the provisioning CA certificate as its own certificate for DTLS.
 We tuned our Mbed TLS configuration for better security. Because we control all endpoints, we can disable less-secure TLS features in favor of using the most secure ones. Check out our [configuration file](../controller/mbedtls-config.h).
 
 Mbed TLS requires dynamic memory allocation. We initially considered using an RTOS to provide this facility, but we did not have the man-hours available to implement that. Fortunately, Mbed TLS can [bring its own dynamic memory allocator](https://tls.mbed.org/kb/how-to/using-static-memory-instead-of-the-heap). We chose to use that option. Notably, the allocator provided by Mbed TLS has no heap smashing protection.
+
+## Usage
+
+On startup and before entering the main loop, the `main` function in `controller.c` calls `dtls_setup`, which initializes the DTLS subsystem. In the event that the DTLS subsystem experiences an unrecoverable error at any time, `dtls_fatal_error` is called, which prints information about the error and then calls `dtls_teardown`. `dtls_teardown` frees all of the memory that was allocated by `dtls_setup`.
+
+In order to send a message, `main` calls `dtls_send_message` or `dtls_send_message_to_sss`, depending on whether the message should be sent over the air or to the SSS. When a unicast packet is received over the air or a packet is received over the SSS interface, the packet is passed by `main` to `dtls_handle_packet`.
+
+When the DTLS subsystem has finished a transaction with the SSS, it passes the received response to `handle_sss_recv` in `controller.c`. When the DTLS subsystem has finished receiving a message over the air, it passes the received message to `handle_scewl_recv` in `scewl.c`.
+
+When a timeout has expired, `main` calls `dtls_check_timers`.
