@@ -34,6 +34,10 @@ We tuned our Mbed TLS configuration for better security. Because we control all 
 
 Mbed TLS requires dynamic memory allocation. We initially considered using an RTOS to provide this facility, but we did not have the man-hours available to implement that. Fortunately, Mbed TLS can [bring its own dynamic memory allocator](https://tls.mbed.org/kb/how-to/using-static-memory-instead-of-the-heap). We chose to use that option. Notably, the allocator provided by Mbed TLS has no heap smashing protection.
 
+## Custom changes to Mbed TLS
+
+`/controller/mbedtls/` is a git submodule for the Mbed TLS library. `/controller/mbedtls_custom/` contains modified versions of some files from the Mbed TLS library. The files that we have modified are `aes.c`, `hmac_drbg.c`, and the corresponding header files. Please see [this file](mbedtls_changelog.md) for a list of the modifications we made.
+
 ## Usage
 
 On startup and before entering the main loop, the `main` function in `controller.c` calls `dtls_setup`, which initializes the DTLS subsystem. In the event that the DTLS subsystem experiences an unrecoverable error at any time, `dtls_fatal_error` is called, which prints information about the error and then calls `dtls_teardown`. `dtls_teardown` frees all of the memory that was allocated by `dtls_setup`.
