@@ -442,13 +442,7 @@ static void dtls_server_startup(struct dtls_state *dtls_state, struct dtls_serve
 /*
  * Give the server some data that we received.
  */
-static void dtls_server_feed(struct dtls_state *state, struct dtls_server_state *server_state, char *data, size_t data_len) {
-	if (server_state->data_available) {
-		// Should never happen
-		mbedtls_printf("Programming error! Should never happen.");
-		dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
-		return;
-	}
+static void dtls_server_feed(struct dtls_server_state *server_state, char *data, size_t data_len) {
 	server_state->data = data;
 	server_state->data_len = data_len;
 	server_state->data_available = true;
@@ -484,16 +478,10 @@ static void dtls_client_startup(struct dtls_state *dtls_state, struct dtls_clien
 /*
  * Give the client some data that we received.
  */
-static void dtls_client_feed(struct dtls_state *state, struct dtls_client_state *client_state, char *data, size_t data_len) {
-	if (client_state->data_available) {
-		// Should never happen
-		mbedtls_printf("Programming error! Should never happen.");
-		dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
-		return;
-	}
-	client_state->data = data;
-	client_state->data_len = data_len;
-	client_state->data_available = true;
+static void dtls_client_feed(struct dtls_client_state *state, char *data, size_t data_len) {
+	state->data = data;
+	state->data_len = data_len;
+	state->data_available = true;
 }
 
 /*
@@ -758,7 +746,7 @@ void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, s
 			// DTLS client packet handling
 			if (state->client_state.server_scewl_id == src_id) {
 				// Give the session the data that we received
-				dtls_client_feed(state, &state->client_state, data, data_len);
+				dtls_client_feed(&state->client_state, data, data_len);
 				dtls_client_run(state, &state->client_state);
 				if (state->client_state.status == DONE) {
 					state->status = IDLE;
@@ -778,7 +766,7 @@ void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, s
 			// DTLS server packet handling
 			if (state->server_state.client_scewl_id == src_id) {
 				// Give the session the data that we received
-				dtls_server_feed(state, &state->server_state, data, data_len);
+				dtls_server_feed(&state->server_state, data, data_len);
 				dtls_server_run(&state->server_state);
 				if (state->server_state.status == DONE) {
 					state->status = IDLE;
