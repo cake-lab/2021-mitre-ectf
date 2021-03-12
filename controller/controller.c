@@ -288,7 +288,7 @@ int main() {
           len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
           scum_handle(&scum_ctx, hdr.src_id, scewl_buf, len);
 
-        } else if (hdr.tgt_id == SCEWL_ID) { // Handle Unicast
+        } else if (hdr.tgt_id == SCEWL_ID && dtls_state.status != TALKING_TO_SSS) { // Handle Unicast
 
           len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
           dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
