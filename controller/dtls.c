@@ -15,6 +15,7 @@
 #define HS_TIMEOUT_MS_MIN 7000
 #define HS_TIMEOUT_MS_MAX 60000
 #define DTLS_OVERHEAD 77 //65 for DTLS 1.0
+#define SCEWL_ID_STR_LEN 6
 
 
 /*
@@ -203,7 +204,7 @@ void dtls_rekey(
 ) {
 	int ret;
 	uint32_t flags;
-	char scewl_id_str[6];
+	char scewl_id_str[SCEWL_ID_STR_LEN];
 	char *cn;
 	char cert_info[1000];
 
@@ -217,7 +218,7 @@ void dtls_rekey(
 	}
 
 	if (verify_cn) {
-		mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
+		mbedtls_snprintf(scewl_id_str, SCEWL_ID_STR_LEN, "%u", (unsigned int) SCEWL_ID);
 		cn = scewl_id_str;
 	} else {
 		cn = NULL;
@@ -281,10 +282,10 @@ void dtls_rekey_to_default(struct dtls_state *state, bool free_existing, bool ve
  */
 void dtls_setup_rng(struct dtls_state *state) {
 	int ret;
-	char scewl_id_str[6];
+	char scewl_id_str[SCEWL_ID_STR_LEN];
 	int scewl_id_str_len;
 
-	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
+	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, SCEWL_ID_STR_LEN, "%u", (unsigned int) SCEWL_ID);
 
 	mbedtls_hmac_drbg_init(&state->hmac_drbg);
 	ret = rng_setup(&state->hmac_drbg, (unsigned char *) scewl_id_str, scewl_id_str_len);
@@ -300,14 +301,14 @@ void dtls_setup_rng(struct dtls_state *state) {
  */
 void dtls_setup(struct dtls_state *state, struct flash_buf *message_fbuf) {
 	int ret;
-	char scewl_id_str[6];
+	char scewl_id_str[SCEWL_ID_STR_LEN];
 	int scewl_id_str_len;
 
 	state->status = IDLE;
 	state->server_state.message_fbuf = message_fbuf;
 	state->client_state.message_fbuf = message_fbuf;
 
-	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) SCEWL_ID);
+	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, SCEWL_ID_STR_LEN, "%u", (unsigned int) SCEWL_ID);
 
 	mbedtls_x509_crt_init(&state->ca);
 	mbedtls_x509_crt_init(&state->cert);
@@ -403,7 +404,7 @@ static int dtls_client_ssl_recv(void *ctx, unsigned char *buf, size_t len) {
  */
 static void dtls_server_startup(struct dtls_state *dtls_state, struct dtls_server_state *server_state) {
 	int ret, scewl_id_str_len;
-	char scewl_id_str[6];
+	char scewl_id_str[SCEWL_ID_STR_LEN];
 
 	ret = mbedtls_ssl_session_reset(&server_state->ssl);
 	if (ret != 0) {
@@ -412,7 +413,7 @@ static void dtls_server_startup(struct dtls_state *dtls_state, struct dtls_serve
 		return;
 	}
 
-	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) server_state->client_scewl_id);
+	scewl_id_str_len = mbedtls_snprintf(scewl_id_str, SCEWL_ID_STR_LEN, "%u", (unsigned int) server_state->client_scewl_id);
 
 	ret = mbedtls_ssl_set_hostname(&server_state->ssl, scewl_id_str);
 	if (ret != 0) {
@@ -452,7 +453,7 @@ static void dtls_server_feed(struct dtls_server_state *server_state, char *data,
  */
 static void dtls_client_startup(struct dtls_state *dtls_state, struct dtls_client_state *client_state, char *message, size_t message_len) {
 	int ret;
-	char scewl_id_str[6];
+	char scewl_id_str[SCEWL_ID_STR_LEN];
 
 	ret = mbedtls_ssl_session_reset(&client_state->ssl);
 	if (ret != 0) {
@@ -460,7 +461,7 @@ static void dtls_client_startup(struct dtls_state *dtls_state, struct dtls_clien
 		dtls_fatal_error(dtls_state, ret);
 		return;
 	}
-	mbedtls_snprintf(scewl_id_str, 6, "%u", (unsigned int) client_state->server_scewl_id);
+	mbedtls_snprintf(scewl_id_str, SCEWL_ID_STR_LEN, "%u", (unsigned int) client_state->server_scewl_id);
 	ret = mbedtls_ssl_set_hostname(&client_state->ssl, scewl_id_str);
 	if (ret != 0) {
 		mbedtls_printf("failed! mbedtls_ssl_set_hostname returned -%#06x", (unsigned int) -ret);
