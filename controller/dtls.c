@@ -211,6 +211,9 @@ void dtls_rekey(
 		mbedtls_x509_crt_free(&state->ca);
 		mbedtls_x509_crt_free(&state->cert);
 		mbedtls_pk_free(&state->pkey);
+		mbedtls_x509_crt_init(&state->ca);
+		mbedtls_x509_crt_init(&state->cert);
+		mbedtls_pk_init(&state->pkey);
 	}
 
 	if (verify_cn) {
