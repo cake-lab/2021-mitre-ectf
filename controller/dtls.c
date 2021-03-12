@@ -688,6 +688,11 @@ void dtls_send_message(struct dtls_state *state, uint16_t dst_id, char *message,
 			mbedtls_printf("Attempted to send a message while there is an active session.");
 			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
 			return;
+		default:
+			// Should never happen
+			mbedtls_printf("Programming error! Should never happen.");
+			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+			return;
 		case IDLE:
 			state->status = SENDING_MESSAGE;
 			state->client_state.channel = SCEWL;
@@ -711,6 +716,11 @@ void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t me
 		case TALKING_TO_SSS:
 			// Should never happen
 			mbedtls_printf("Attempted to send a message while there is an active session.");
+			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+			return;
+		default:
+			// Should never happen
+			mbedtls_printf("Programming error! Should never happen.");
 			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
 			return;
 		case IDLE:
@@ -766,6 +776,11 @@ void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, s
 				mbedtls_printf("Dropping packet from %u", src_id);
 			}
 			return;
+		default:
+			// Should never happen
+			mbedtls_printf("Programming error! Should never happen.");
+			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+			return;
 	}
 }
 
@@ -794,5 +809,10 @@ void dtls_check_timers(struct dtls_state *state) {
 		case IDLE:
 		case FATAL_ERROR:
 			break;
+		default:
+			// Should never happen
+			mbedtls_printf("Programming error! Should never happen.");
+			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+			return;
 	}
 }
