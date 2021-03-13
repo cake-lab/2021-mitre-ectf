@@ -649,7 +649,6 @@ static int scum_sync_req_handle(struct scum_ctx *ctx, char *data)
   struct scum_data_session *data_session;
   struct scum_hdr *hdr;
   uint8_t msg_buf[SCUM_SYNC_RESP_LEN];
-  uint32_t prev_key_count;
   int ret;
 
   sync_session = &ctx->sync_session;
@@ -677,10 +676,8 @@ static int scum_sync_req_handle(struct scum_ctx *ctx, char *data)
     return ret;
   }
 
-  // Copy message count and previous key
-  prev_key_count = data_session->crypto.key_count-1;
+  // Copy sequence count
   memcpy(msg_buf+SCUM_SYNC_REQ_LEN, (uint8_t *)&data_session->seq_number, SCUM_SEQ_NUMBER_LEN);
-  memcpy(msg_buf+SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN, (uint8_t *)&prev_key_count, SCUM_KEY_COUNT_LEN);
 
   // Construct outgoing header
   hdr = (struct scum_hdr *)sync_session->stage_buf;
@@ -740,11 +737,8 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx, char *data)
     return S_SOFT_ERROR;
   }
 
-  // Disable
-
   // Copy message and key counts
   memcpy((uint8_t *)&data_session->seq_number, msg_buf+SCUM_SYNC_REQ_LEN, SCUM_SEQ_NUMBER_LEN);
-  memcpy((uint8_t *)&data_session->crypto.key_count, msg_buf+SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN, SCUM_KEY_COUNT_LEN);
 
   // Clear data
   memset(sync_session->sync_bytes, 0, SCUM_SYNC_REQ_LEN);
@@ -753,7 +747,7 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx, char *data)
   ctx->status = S_IDLE;
 
   // Update data session
-  ret = scum_derive_keys(&data_session->crypto);
+  ret = scum_update_keys(&data_session->crypto, data_session->seq_number, 1/*force*/);
   if (ret != 0) {
     mbedtls_printf("Post-sync key derivation failed");
     return ret;
