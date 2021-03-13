@@ -16,3 +16,5 @@ The code is structured the same as the example code, which is as follows:
 ## Documentation
 
 [Unicast and SSS communications](docs/dtls.md)
+
+[Broadcast communications](docs/scum.md)
