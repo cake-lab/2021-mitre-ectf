@@ -676,8 +676,20 @@ static int scum_sync_req_handle(struct scum_ctx *ctx, char *data)
     return ret;
   }
 
-  // Copy sequence count
-  memcpy(msg_buf+SCUM_SYNC_REQ_LEN, (uint8_t *)&data_session->seq_number, SCUM_SEQ_NUMBER_LEN);
+  // Generate random mask
+  ret = mbedtls_hmac_drbg_random(&sync_session->rng, msg_buf+SCUM_SYNC_REQ_LEN, SCUM_SEQ_NUMBER_LEN);
+  if (ret != 0) {
+    mbedtls_printf("failed! mbedtls_hmac_drbg_random returned -%#06x", (unsigned int) -ret);
+    return S_FATAL_ERROR;
+  }
+
+  // Copy random mask into last section
+  memcpy(msg_buf+SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN, msg_buf+SCUM_SYNC_REQ_LEN, SCUM_SEQ_NUMBER_LEN);
+
+  // XOR sequence count into copy of random mask
+  for (int i = 0; i < SCUM_SEQ_NUMBER_LEN; i++) {
+    *(msg_buf+SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN+i) ^= *(((uint8_t *)&data_session->seq_number)+i);
+  }
 
   // Construct outgoing header
   hdr = (struct scum_hdr *)sync_session->stage_buf;
@@ -737,8 +749,13 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx, char *data)
     return S_SOFT_ERROR;
   }
 
-  // Copy message and key counts
-  memcpy((uint8_t *)&data_session->seq_number, msg_buf+SCUM_SYNC_REQ_LEN, SCUM_SEQ_NUMBER_LEN);
+  // Remove random mask from sequence count
+  for (int i = 0; i < SCUM_SEQ_NUMBER_LEN; i++) {
+    *(msg_buf+SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN+i) ^= *(msg_buf+SCUM_SYNC_REQ_LEN+i);
+  }
+
+  // Copy sequence count
+  memcpy((uint8_t *)&data_session->seq_number, msg_buf+SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN, SCUM_SEQ_NUMBER_LEN);
 
   // Clear data
   memset(sync_session->sync_bytes, 0, SCUM_SYNC_REQ_LEN);
