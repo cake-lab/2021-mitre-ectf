@@ -42,9 +42,9 @@
 #define SCUM_HDR_LEN (sizeof(struct scum_hdr))
 #define SCUM_MAX_DATA_LEN (SCEWL_MTU - SCUM_HDR_LEN - SCUM_TAG_LEN)
 
-#define SCUM_MSG_COUNT_LEN (sizeof(uint64_t))
+#define SCUM_SEQ_NUMBER_LEN (sizeof(uint64_t))
 #define SCUM_KEY_COUNT_LEN (sizeof(uint32_t))
-#define SCUM_SYNC_REQ_LEN (SCUM_MSG_COUNT_LEN+SCUM_KEY_COUNT_LEN)
+#define SCUM_SYNC_REQ_LEN (SCUM_SEQ_NUMBER_LEN)
 #define SCUM_SYNC_RESP_LEN (2*SCUM_SYNC_REQ_LEN)
 
 // Key parameters
@@ -108,7 +108,7 @@ struct scum_data_session {
 
   scewl_id_t recv_src_id;
 
-  uint64_t msg_count;
+  uint64_t seq_number;
 
   uint16_t in_received;
   uint16_t out_remaining;

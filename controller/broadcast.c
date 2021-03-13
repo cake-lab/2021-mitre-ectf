@@ -128,15 +128,18 @@ static int scum_derive_keys(struct scum_crypto *crypto)
 }
 
 // Check key status and refresh -- helper function avoids always buffers
-static int scum_update_keys(struct scum_crypto *crypto, uint64_t msg_count)
+static int scum_update_keys(struct scum_crypto *crypto, uint64_t seq_number, uint8_t force)
 {
   int ret;
 
-  // Only re-key at the key derivation rate
-  if ((crypto->kdr == 0) || (msg_count % crypto->kdr != 0)) {
+  // Force a re-key from the last kdr multiple (useful for catching up to a running session)
+  // Otherwise, only re-key at the key derivation rate
+  if (force) {
+    crypto->key_count = seq_number / crypto->kdr;
+  } else if ((crypto->kdr == 0) || (seq_number % crypto->kdr != 0)) {
     return 0;
   }
-  
+
   ret = scum_derive_keys(crypto);
   if (ret != 0) {
     mbedtls_printf("Key refresh failed");
@@ -207,7 +210,7 @@ static void scum_data_init(struct scum_data_session *session)
   scum_crypto_init(&session->crypto);
 
   // Clear variables
-  session->msg_count = 0;
+  session->seq_number = 0;
   session->in_received = 0;
   session->out_remaining = 0;
   session->out_msg_len = 0;
@@ -222,7 +225,7 @@ static int scum_data_setup(struct scum_data_session *session, char *key, char *s
   int ret;
 
   // Initialize session parameters
-  session->msg_count = 0;
+  session->seq_number = 0;
   session->in_received = 0;
   session->out_remaining = 0;
   session->out_msg_len = 0;
@@ -408,7 +411,7 @@ static int scum_data_push(struct scum_data_session *session, char *data)
   // Construct header in output buffer
   hdr = (struct scum_hdr *)session->stage_buf;
   hdr->type = S_DATA;
-  hdr->seq_number = session->msg_count;
+  hdr->seq_number = session->seq_number;
 
   if (session->out_remaining <= SCUM_MAX_DATA_LEN) {
     hdr->length = session->out_remaining;
@@ -429,10 +432,10 @@ static int scum_data_push(struct scum_data_session *session, char *data)
   session->out_remaining -= ret;
 
   // Update session status
-  session->msg_count++;
+  session->seq_number++;
 
   // Refresh keys if needed
-  ret = scum_update_keys(&session->crypto, session->msg_count);
+  ret = scum_update_keys(&session->crypto, session->seq_number, 0/*no force*/);
   if (ret != 0) {
     mbedtls_printf("Data session (send) key refresh failed");
     return ret;
@@ -486,16 +489,43 @@ static int scum_data_absorb(struct scum_data_session *session, char *data)
   if (hdr->length + session->in_received > SCEWL_MAX_DATA_SZ) {
     mbedtls_printf("Attempted to receive more than SCEWL_MAX_DATA_SZ bytes");
     return S_SOFT_ERROR;
-  } else if (hdr->seq_number < session->msg_count) {
+  } else if (hdr->seq_number < session->seq_number) {
     mbedtls_printf("Attempted to receive message with earlier sequence number");
     return S_SOFT_ERROR;
   }
 
   // Decrypt and absorb
   ret = scum_absorb_frame(&session->crypto, data, session->stage_buf);
-  if (ret < 0) {
+
+  // If authentication failed and message count is from the future,
+  // temporarily update key and retry -- revert keys on second failure
+  // If any other errors occur during this, exit as normal
+  if (ret < 0 && ret != S_SOFT_ERROR) {
+
     mbedtls_printf("Failed to decrypt SCUM frame");
     return ret;
+
+  } else if ((ret == S_SOFT_ERROR) && (hdr->seq_number > session->seq_number)) {
+
+    mbedtls_printf("Failed to decrypt SCUM frame -- retrying with updated keys");
+    ret = scum_update_keys(&session->crypto, hdr->seq_number, 1/*force*/);
+    if (ret != 0) {
+      mbedtls_printf("Data session (receive) temporary key refresh failed");
+      return ret;
+    }
+
+    ret = scum_absorb_frame(&session->crypto, data, session->stage_buf);
+    if (ret < 0) {
+      mbedtls_printf("Failed to decrypt SCUM frame with updated keys -- reverting");
+      ret = scum_update_keys(&session->crypto, session->seq_number, 1/*force*/);
+      if (ret != 0) {
+        mbedtls_printf("Data session (receive) key revert failed");
+        return ret;
+      }
+      return ret;
+    }
+
+    mbedtls_printf("SCUM frame decryption successful with updated keys -- keeping them");
   }
 
   // Write to SCUM flash buffer -- if have received no bytes yet, request an erase
@@ -504,11 +534,11 @@ static int scum_data_absorb(struct scum_data_session *session, char *data)
   // Update stream status
   session->in_received += ret;
 
-  // Update session status
-  session->msg_count++;
+  // Update session status (next message is 1 count higher than this one)
+  session->seq_number = hdr->seq_number+1;
 
   // Refresh keys if needed
-  ret = scum_update_keys(&session->crypto, session->msg_count);
+  ret = scum_update_keys(&session->crypto, session->seq_number, 0/*no force*/);
   if (ret != 0) {
     mbedtls_printf("Data session (receive) key refresh failed");
     return ret;
@@ -649,8 +679,8 @@ static int scum_sync_req_handle(struct scum_ctx *ctx, char *data)
 
   // Copy message count and previous key
   prev_key_count = data_session->crypto.key_count-1;
-  memcpy(msg_buf+SCUM_SYNC_REQ_LEN, (uint8_t *)&data_session->msg_count, SCUM_MSG_COUNT_LEN);
-  memcpy(msg_buf+SCUM_SYNC_REQ_LEN+SCUM_MSG_COUNT_LEN, (uint8_t *)&prev_key_count, SCUM_KEY_COUNT_LEN);
+  memcpy(msg_buf+SCUM_SYNC_REQ_LEN, (uint8_t *)&data_session->seq_number, SCUM_SEQ_NUMBER_LEN);
+  memcpy(msg_buf+SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN, (uint8_t *)&prev_key_count, SCUM_KEY_COUNT_LEN);
 
   // Construct outgoing header
   hdr = (struct scum_hdr *)sync_session->stage_buf;
@@ -713,8 +743,8 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx, char *data)
   // Disable
 
   // Copy message and key counts
-  memcpy((uint8_t *)&data_session->msg_count, msg_buf+SCUM_SYNC_REQ_LEN, SCUM_MSG_COUNT_LEN);
-  memcpy((uint8_t *)&data_session->crypto.key_count, msg_buf+SCUM_SYNC_REQ_LEN+SCUM_MSG_COUNT_LEN, SCUM_KEY_COUNT_LEN);
+  memcpy((uint8_t *)&data_session->seq_number, msg_buf+SCUM_SYNC_REQ_LEN, SCUM_SEQ_NUMBER_LEN);
+  memcpy((uint8_t *)&data_session->crypto.key_count, msg_buf+SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN, SCUM_KEY_COUNT_LEN);
 
   // Clear data
   memset(sync_session->sync_bytes, 0, SCUM_SYNC_REQ_LEN);
