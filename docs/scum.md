@@ -63,6 +63,24 @@ The synchronization transaction occurs as follows:
     - The SED decrypts the response and verifies that the original challenge message is in the response
     - The SED removes the mask from the sequence number, updates the data channel count, and refreshes the data keys appropriately
 
+**Sync Request**
+```
+|------------|----------|-----------|-------|-----------|
+| end marker |   type   | length(B) | seq # |   data    |
+|------------|----------|-----------|-------|-----------|
+|     0      | SYNC_REQ |     8     |   0   | rand0 (8) |
+|------------|----------|-----------|-------|-----------|
+```
+
+**Sync Response**
+```
+|------------|-----------|-----------|-------|----------------------------------------|
+| end marker |   type    | length(B) | seq # |                 data                   |
+|------------|-----------|-----------|-------|----------------------------------------|
+|     0      | SYNC_RESP |    24     |   0   | rand0 (8), rand1 (8), rand1 ^ seq# (8) |
+|------------|-----------|-----------|-------|----------------------------------------|
+```
+
 In the event that an SED misses a message and receives a SCUM frame with a sequence number from the future that is beyond the next KDR multiple, the SED will fail to authenticate and decrypt the frame.
 In this case, the SED will test if updated keys will work for decryption. This is done by temporarily forwarding its sequence number to the sequence number of the received frame, refreshing the data keys,
 and re-attempting decryption/authentication.
