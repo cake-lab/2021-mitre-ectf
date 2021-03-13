@@ -134,7 +134,8 @@ static int scum_update_keys(struct scum_crypto *crypto, uint64_t seq_number, uin
 
   // Force a re-key from the last kdr multiple (useful for catching up to a running session)
   // Otherwise, only re-key at the key derivation rate
-  if (force) {
+  // CANNOT force if kdr is 0
+  if (force && (crypto->kdr != 0)) {
     crypto->key_count = seq_number / crypto->kdr;
   } else if ((crypto->kdr == 0) || (seq_number % crypto->kdr != 0)) {
     return 0;
