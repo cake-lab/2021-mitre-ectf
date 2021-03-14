@@ -1,6 +1,6 @@
 /*
  * Author: Jake Grycel - jtgrycel@wpi.edu
- * Description: Timer configuration module for DTLS timing requirements
+ * Description: Timer configuration module for DTLS and SCUM timing requirements
  */
 
 #ifndef TIMERS_H

@@ -1,6 +1,8 @@
 /*
  * Author: Jacob T. Grycel
- * Description: 
+ * Description: Functionality for using Flash-based buffers to store maximum
+ *              SCEWL length messages. Flash buffer regions are set up in
+ *              `lm3s/controller.ld`
  */
 
 #ifndef FLASH_BUFFERS_H

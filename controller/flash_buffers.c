@@ -1,6 +1,8 @@
 /*
  * Author: Jacob T. Grycel
- * Description: 
+ * Description: Functionality for using Flash-based buffers to store maximum
+ *              SCEWL length messages. Flash buffer regions are set up in
+ *              `lm3s/controller.ld`
  */
 
 #include "controller.h"
@@ -21,6 +23,9 @@ struct flash_buf SCUM_FBUF = {.start_addr=(uint32_t)&_scum_buf_start, .partial_d
 struct flash_buf FAA_FBUF = {.start_addr=(uint32_t)&_faa_buf_start, .partial_data={0,0,0,0}, .partial_count=0, .write_pos=0};
 
 
+/*
+ * Erase a full Flash buffer
+ */
 static void flash_erase_buf(struct flash_buf *dst_buf) {
   // Erase all pages
   for (uint32_t i = 0; i < PAGES_PER_BUF; i++) {
@@ -34,6 +39,9 @@ static void flash_erase_buf(struct flash_buf *dst_buf) {
   dst_buf->write_pos = 0;
 }
 
+/*
+ * Program one full word to a Flash buffer
+ */
 static inline void flash_write_word(struct flash_buf *dst_buf, char *src_buf) {
   // Program one 32-bit word into Flash address
   FLASH_CTRL->FMA &= ~FLASH_FMA_OFFSET_M; // Clear address field
@@ -45,6 +53,9 @@ static inline void flash_write_word(struct flash_buf *dst_buf, char *src_buf) {
   dst_buf->write_pos += 4;
 }
 
+/*
+ * Pad any remaining bytes that did not fit into a word, and program to Flash
+ */
 void flash_commit_buf(struct flash_buf *dst_buf) {
   if (dst_buf->partial_count != 0) {
     while (dst_buf->partial_count < 4) {
@@ -55,6 +66,10 @@ void flash_commit_buf(struct flash_buf *dst_buf) {
   }
 }
 
+/*
+ * Write a full buffer from SRAM into a Flash buffer
+ * Performs a buffer erase if this is the start of a new message to be stored
+ */
 void flash_write_buf(struct flash_buf *dst_buf, char *src_buf, size_t len, char new) {
   size_t write_len;
   size_t read_pos;
@@ -98,6 +113,9 @@ void flash_write_buf(struct flash_buf *dst_buf, char *src_buf, size_t len, char 
   }
 }
 
+/*
+ * Get a pointer to the Flash buffer memory address for reading
+ */
 char* flash_get_buf(struct flash_buf *src_buf) {
   return (char *)(src_buf->start_addr);
 }
