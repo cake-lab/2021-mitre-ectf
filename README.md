@@ -15,6 +15,12 @@ The code is structured the same as the example code, which is as follows:
 
 ## Documentation
 
-[Unicast and SSS communications](docs/dtls.md)
+[Unicast and SSS Communications](docs/dtls.md)
 
-[Broadcast communications](docs/scum.md)
+[Broadcast Communications](docs/scum.md)
+
+[Buffer Utilization](docs/buffers.md)
+
+[Random Number Generation](docs/rng.md)
+
+[Side-Channel Protections](docs/sca.md)
