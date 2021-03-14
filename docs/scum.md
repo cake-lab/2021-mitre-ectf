@@ -1,4 +1,4 @@
-# SCEWL Controller Univeral Messaging (SCUM)
+# SCEWL Controller Universal Messaging (SCUM)
 
 ```
 ░██████╗░█████╗░██╗░░░██╗███╗░░░███╗
@@ -16,7 +16,7 @@ SCUM uses the AES-256 GCM variant of SRTP defined in [RFC 7714](https://tools.ie
 differs from SRTP in the following key aspects:
 
 1. SCUM uses the authenticated SRTP global sequence number as a means for preventing replay attacks
-    - SEDs only accept the current message count, or a message count from the future to simplify unsychronized state recovery
+    - SEDs only accept the current message count, or a message count from the future to simplify unsynchronized state recovery
     - SRTP uses a database of previous messages to detect replays within a recent message window
     - SRTP does not use the sequence number in a cryptographic way at the protocol layer, but suggests it may be used for
       security features at the application layer
@@ -51,7 +51,7 @@ SED registered is given a 'Pre-Synced' status by the SSS, which indicates that t
 an 'UNSYNC' state, and repeatedly sends a synchronization request every 10 seconds until it receives a response.
 
 Synchronization happens on a separate channel from the data stream, called the *sync channel*. The sync channel is NOT subject to the same global sequence number requirement as the data channel. Instead, replay protection
-is provided through a challenge/response transaction. Furthermore, the sync channel and data channel have entirely separate, randomly generated mater cryptographic states that are provided by the SSS during registraion.
+is provided through a challenge/response transaction. Furthermore, the sync channel and data channel have entirely separate, randomly generated mater cryptographic states that are provided by the SSS during registration.
 The synchronization transaction occurs as follows:
 
 1. Unsynced SED generates a string of random bytes, sends encrypted over the sync channel
@@ -91,10 +91,10 @@ network race conditions while staying resilient to corrupted attacker messages.
 
 ## Authentication
 
-The entire header of every SCUM frame is authenciated by the GCM tag. As opposed to the HMAC technique proposed by the first variant of SRTP, the GCM
+The entire header of every SCUM frame is authenticated by the GCM tag. As opposed to the HMAC technique proposed by the first variant of SRTP, the GCM
 tag encrypts the data plaintext, and adds the plaintext as well as additional data (the header) into a cryptographic authentication tag, with
 encryption and authentication tag calculation happening concurrently, as opposed to sequentially in HMAC. This means that the header can only be
-authenticated once decryption has been completed. In order to work around this limitation, **the only decisions made on the header before authencation
+authenticated once decryption has been completed. In order to work around this limitation, **the only decisions made on the header before authentication
 is to set up data lengths**. The SCUM implementation will only accept SCUM header length fields that fit within the SCEWL MTU, taking into account
 the header and tag overhead. All data is processed into a staging buffer that is allocated to support the maximum data size.
 

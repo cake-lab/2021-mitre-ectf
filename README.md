@@ -10,7 +10,7 @@ The code is structured the same as the example code, which is as follows:
 * `dockerfiles/` - Contains all Dockerfiles to build system
 * `radio/` - Contains the Radio Waves Emulator
 * `socks/` - Directory to hold sockets for the network backend
-* `tools/` - Miscellaneous tools to run and interract with deployments
+* `tools/` - Miscellaneous tools to run and interact with deployments
 * `Makefile` - Root Makefile to build deployments
 
 ## Documentation

@@ -13,8 +13,8 @@ fragmented in 1000-byte segments, where we call the 1000-byte limit the SCEWL
 Maximum Transmission Unit (MTU).
 
 Messages received from the CPU or from the FAA channel, however, have no
-enforcable rules for partitioning messages into the MTU, so the system reads
-up to 16KB messages into Flash buffers, whihc are dedicated sections at the end
+enforceable rules for partitioning messages into the MTU, so the system reads
+up to 16KB messages into Flash buffers, which are dedicated sections at the end
 of Flash for holding maximum sized messages. Before reading a message from any
 interface, the controller checks where that message should be stored. This is
 achieved by only reading the SCEWL header to inform the program logic before
@@ -44,7 +44,7 @@ erasing a full page, and then writing 32-bit words into the primed page. The
 controller supports writing incomplete words into Flash buffers by holding any
 bytes that do not fit into a full word in a temporary buffer. The next time a
 write is made to the buffer, the temporarily stored bytes are written first.
-When a system component (ie. DoS, SCUM) is finished writing all data destined
+When a system component (i.e. DoS, SCUM) is finished writing all data destined
 for the CPU, the component commits the Flash buffer, which pads any remaining
 bytes in the temporary buffer with zeroes, and programs the resulting word. This
 functionality is implemented in [flash_buffers.c](../controller/flash_buffers.c)
