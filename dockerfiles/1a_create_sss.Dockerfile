@@ -27,6 +27,8 @@ RUN mkdir /secrets/configs
 ADD sss.py /sss
 
 # Add certificate configurations
+
+ADD gen_secrets.py /secrets/configs/gen_secrets.py
 ADD ca_crt.cfg /secrets/configs/ca_crt.cfg
 ADD sed_crt.cfg /secrets/configs/sed_crt.cfg
 ADD sed_ext.cfg /secrets/configs/sed_ext.cfg
