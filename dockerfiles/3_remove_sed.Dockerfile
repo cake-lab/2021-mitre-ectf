@@ -14,4 +14,4 @@ ARG SCEWL_ID
 # do whatever you need to remove the SED from the deployment
 
 # Delete all certificate files for the SED
-RUN rm -f /secrets/${SCEWL_ID}
+RUN rm -rf /secrets/${SCEWL_ID}
