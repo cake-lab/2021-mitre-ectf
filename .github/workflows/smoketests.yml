@@ -36,6 +36,8 @@ jobs:
           run: |
             make create_deployment
             make add_sed SED=echo_server SCEWL_ID=10 NAME=echo_server
+            make add_sed SED=echo_server SCEWL_ID=11 NAME=echo_server2
+            make remove_sed SCEWL_ID=11 NAME=echo_server2
             make add_sed SED=echo_client_enhanced SCEWL_ID=11 NAME=echo_client_enhanced CUSTOM='TGT_ID=10'
             make deploy
             python3 tools/faa_read.py socks/faa.sock &
@@ -44,7 +46,9 @@ jobs:
             sleep 5
             make launch_sed_cit NAME=echo_client_enhanced SCEWL_ID=11
             wait $FAA_READER_PID
-      - name: Check for flag
+            make remove_sed SCEWL_ID=10 NAME=echo_server
+            make remove_sed SCEWL_ID=11 NAME=echo_client_enhanced
+      - name: Check for SUCCESS
         run: |
           cat faa.log
           cat 10-cpu.log
