@@ -48,8 +48,8 @@
 #define SCUM_SYNC_RESP_LEN (SCUM_SYNC_REQ_LEN+SCUM_SEQ_NUMBER_LEN*2)
 
 // Key parameters
-#define FRAMES_PER_MSG (SCEWL_MAX_DATA_SZ/SCUM_MAX_DATA_LEN)
-#define SCUM_DEFAULT_KDR (1000*FRAMES_PER_MSG) // x * 17frames/msg
+#define FRAMES_PER_MSG (((SCEWL_MAX_DATA_SZ-1)/SCUM_MAX_DATA_LEN)+1) // Round up
+#define SCUM_DEFAULT_KDR (2*FRAMES_PER_MSG) // x * 17frames/msg
 
 // Timing requirements
 #define SYNC_REQ_TIMEOUT 10000 // 10 seconds
