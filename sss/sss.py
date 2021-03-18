@@ -10,15 +10,17 @@
 # This code is being provided only for educational purposes for the 2021 MITRE eCTF competition,
 # and may not meet MITRE standards for quality. Use this code at your own risk!
 
+import argparse
 from contextlib import suppress
 from datetime import datetime, timedelta
+import logging
+import os
 from secrets import token_bytes
 import socket
 import select
 import struct
-import argparse
-import logging
-import os
+import threading
+from time import sleep
 
 from mbedtls import hashlib, pk, tls, x509
 from mbedtls.exceptions import TLSError
@@ -38,10 +40,29 @@ SCUM_SALT_LENGTH = 12
 # mirroring scewl enum at scewl.c:4
 BAD_REQUEST, REG, DEREG = -1, 0, 1
 
-MAIN_LOOP_MIN_FREQUENCY = None
 DEBUG_LEVEL = 1
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+	format='%(asctime)s %(levelname)-8s %(message)s',
+	level=logging.DEBUG,
+	datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+
+class Watchdog:
+	def start(self):
+		self.last_fed = datetime.now()
+		self.thread = threading.Thread(target=self._run, name="watchdog")
+		self.thread.start()
+
+	def feed(self):
+		self.last_fed = datetime.now()
+
+	def _run(self):
+		while(True):
+			sleep(1)
+			if datetime.now() - self.last_fed > timedelta(seconds=15):
+				logging.fatal('Watchdog timeout! SSS is frozen.')
 
 
 def block(callback, *args, **kwargs):
@@ -148,18 +169,30 @@ class Device:
 		self.handshake_complete = False
 		self.registered = False
 		self.runtime_cert = None
+		self.datetime_start = None
 
 	def new_conn(self, conn):
 		self.conn = conn
 
 	def disconnect(self):
+		self.conn = None
+		self.handshake_complete = False
+
+	def reset(self):
 		self.conn._buffer.shutdown()
+		if self.datetime_start:
+			duration = datetime.now() - self.datetime_start
+			if duration > timedelta(seconds=15):
+				logging.warning(f'Session with {self.conn.getpeername()} took {duration}.')
+			else:
+				logging.debug(f'Session with {self.conn.getpeername()} took {duration}.')
+			self.datetime_start = None
 		self.handshake_complete = False
 
 	def handle(self):
 		if self.handshake_complete:
 			self.handle_transaction()
-			self.disconnect()
+			self.reset()
 		else:
 			self.handshake()
 
@@ -169,26 +202,28 @@ class Device:
 		try:
 			block(self.conn.do_handshake)
 			logging.debug(f'Finished handshake with {self.conn.getpeername()}.')
-			logging.debug(f'Negotiated_tls_version: {self.conn.negotiated_tls_version()}')
+			logging.debug(f'Negotiated TLS version: {self.conn.negotiated_tls_version()}')
 			# Verify that the peer has not been removed from the deployment.
 			certificate_file = f'/secrets/{self.conn.getpeername()}/sed.crt'
 			if not os.path.exists(certificate_file):
 				logging.warning(f'Handshake was successful with peer {self.conn.getpeername()}, who is not properly provisioned.')
-				self.disconnect()
+				self.reset()
 				return
 			expected_certificate = x509.CRT.from_file(certificate_file)
 			expected_pubkey = expected_certificate.subject_public_key
 			peer_pubkey = self.conn._buffer.context.get_peer_public_key()
 			if peer_pubkey != expected_pubkey:
 				logging.warning(f'Handshake was successful with peer {self.conn.getpeername()}, who is using a different public key than expected.')
-				self.disconnect()
+				self.reset()
 				return
 			self.handshake_complete = True
 		except tls.HelloVerifyRequest:
 			logging.debug(f'Hello verification requested.')
-		except TLSError:
-			logging.exception(f'Handshake with {self.conn.getpeername()} failed.')
-			self.disconnect()
+			self.datetime_start = datetime.now()
+		except TLSError as err:
+			if err.err != 30976:
+				logging.exception(f'Handshake with {self.conn.getpeername()} failed.')
+				self.reset()
 
 	def handle_transaction(self):
 		logging.debug(f'Handling transaction with client {self.addr}')
@@ -314,17 +349,21 @@ class SSS:
 		self.devs = {}
 
 	def start(self):
-		timeout = 1 / MAIN_LOOP_MIN_FREQUENCY if MAIN_LOOP_MIN_FREQUENCY is not None else None
 		self.sock.listen()
+		self.watchdog = Watchdog()
+		self.watchdog.start()
 		logging.info('SSS started.')
 		# Serve forever
 		while True:
 			sockets = [self.sock] + [dev.conn for dev in self.devs.values() if dev.conn is not None]
-			readable, _, exceptional = select.select(sockets, [], sockets, timeout)
+			self.watchdog.feed()
+			readable, _, exceptional = select.select(sockets, [], sockets, 1)
+			self.watchdog.feed()
 			if self.sock in exceptional:
 				raise Exception(f'The SSS server socket {self.sock.getsockname()} failed.')
 			for conn in exceptional:
 				dev = next(dev for dev in self.devs if dev.conn == conn)
+				logging.debug(f'disconnected')
 				dev.disconnect()
 			if self.sock in readable:
 				# Perform DTLS handshake with a newly-connected SED
@@ -343,6 +382,7 @@ class SSS:
 				# Handle request from an already-connected SED
 				dev = next(dev for dev in self.devs.values() if dev.conn == conn)
 				dev.handle()
+				self.watchdog.feed()
 
 
 def parse_args():
