@@ -125,7 +125,7 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
             mbedtls_printf("Error setting up masked AES rng. Entering death loop.");
             exit(1);
           }
-          Masked_AES_RNG_Setup(aes_hmac_drbg_ref);
+
           // Configure SCUM
           scum_setup(scum_ctx_ref,
                    (char *)sync_key, (char *)sync_salt,
