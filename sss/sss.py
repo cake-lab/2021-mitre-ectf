@@ -162,6 +162,9 @@ class ScewlSocket(tls.TLSWrappedSocket):
 		finally:
 			self._send_scewl()
 
+	def is_readable(self):
+		return len(self._socket.recv(1, socket.MSG_PEEK)) > 0
+
 
 class Device:
 	def __init__(self, sss, conn, addr):
@@ -392,6 +395,10 @@ class SSS:
 			for conn in readable:
 				# Handle request from an already-connected SED
 				dev = next(dev for dev in self.devs.values() if dev.conn == conn)
+				if not dev.conn.is_readable():
+					logging.info(f'Disconnecting from {dev.addr} because the socket appears to be closed.')
+					dev.disconnect()
+					continue
 				self.watchdog.feed(f'Handling peer {dev.addr}.')
 				dev.handle()
 				self.watchdog.feed(f'Finished handling peer {dev.addr}.')
