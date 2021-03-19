@@ -52,17 +52,19 @@ logging.basicConfig(
 class Watchdog:
 	def start(self):
 		self.last_fed = datetime.now()
+		self.last_food = None
 		self.thread = threading.Thread(target=self._run, name="watchdog")
 		self.thread.start()
 
-	def feed(self):
+	def feed(self, food):
 		self.last_fed = datetime.now()
+		self.last_food = food
 
 	def _run(self):
 		while(True):
-			sleep(1)
+			sleep(2)
 			if datetime.now() - self.last_fed > timedelta(seconds=15):
-				logging.fatal('Watchdog timeout! SSS is frozen.')
+				logging.fatal(f'Watchdog timeout! SSS is frozen. The last food that was fed to the watchdog was {repr(self.last_food)}')
 
 
 def block(callback, *args, **kwargs):
@@ -175,17 +177,17 @@ class Device:
 		self.conn = conn
 
 	def disconnect(self):
+		self.reset()
 		self.conn = None
-		self.handshake_complete = False
 
 	def reset(self):
 		self.conn._buffer.shutdown()
 		if self.datetime_start:
 			duration = datetime.now() - self.datetime_start
 			if duration > timedelta(seconds=15):
-				logging.warning(f'Session with {self.conn.getpeername()} took {duration}.')
+				logging.warning(f'Session with {self.addr} took {duration}.')
 			else:
-				logging.debug(f'Session with {self.conn.getpeername()} took {duration}.')
+				logging.debug(f'Session with {self.addr} took {duration}.')
 			self.datetime_start = None
 		self.handshake_complete = False
 
@@ -197,35 +199,43 @@ class Device:
 			self.handshake()
 
 	def handshake(self):
-		self.conn._buffer.context._set_hostname(f'{self.conn.getpeername()}_PROVISION')
-		self.conn.setcookieparam(self.conn.getpeername().encode("ascii"))
+		assert int(self.conn.getpeername()) == self.addr
+		self.conn._buffer.context._set_hostname(f'{self.addr}_PROVISION')
+		self.conn.setcookieparam(str(self.addr).encode("ascii"))
 		try:
-			block(self.conn.do_handshake)
-			logging.debug(f'Finished handshake with {self.conn.getpeername()}.')
+			self.conn.do_handshake()
+			logging.debug(f'Finished handshake with {self.addr}.')
 			logging.debug(f'Negotiated TLS version: {self.conn.negotiated_tls_version()}')
 			# Verify that the peer has not been removed from the deployment.
-			certificate_file = f'/secrets/{self.conn.getpeername()}/sed.crt'
+			certificate_file = f'/secrets/{self.addr}/sed.crt'
 			if not os.path.exists(certificate_file):
-				logging.warning(f'Handshake was successful with peer {self.conn.getpeername()}, who is not properly provisioned.')
+				logging.warning(f'Handshake was successful with peer {self.addr}, who is not properly provisioned.')
 				self.reset()
 				return
 			expected_certificate = x509.CRT.from_file(certificate_file)
 			expected_pubkey = expected_certificate.subject_public_key
 			peer_pubkey = self.conn._buffer.context.get_peer_public_key()
 			if peer_pubkey != expected_pubkey:
-				logging.warning(f'Handshake was successful with peer {self.conn.getpeername()}, who is using a different public key than expected.')
+				logging.warning(f'Handshake was successful with peer {self.addr}, who is using a different public key than expected.')
 				self.reset()
 				return
 			self.handshake_complete = True
+		except tls.WantReadError:
+			pass
+		except tls.WantWriteError:
+			logging.info(f'Disconnecting from {self.addr} because the socket appears to be closed.')
+			self.disconnect()
 		except tls.HelloVerifyRequest:
 			logging.debug(f'Hello verification requested.')
 			self.datetime_start = datetime.now()
 		except TLSError as err:
 			if err.err != 30976:
-				logging.exception(f'Handshake with {self.conn.getpeername()} failed.')
+				logging.exception(f'Handshake with {self.addr} failed.')
 				self.reset()
 
 	def handle_transaction(self):
+		assert int(self.conn.getpeername()) == self.addr
+
 		logging.debug(f'Handling transaction with client {self.addr}')
 
 		# Receive request from client
@@ -356,23 +366,24 @@ class SSS:
 		# Serve forever
 		while True:
 			sockets = [self.sock] + [dev.conn for dev in self.devs.values() if dev.conn is not None]
-			self.watchdog.feed()
+			self.watchdog.feed('About to wait for sockets to be ready.')
 			readable, _, exceptional = select.select(sockets, [], sockets, 1)
-			self.watchdog.feed()
+			self.watchdog.feed('Finished waiting for sockets to be ready.')
 			if self.sock in exceptional:
 				raise Exception(f'The SSS server socket {self.sock.getsockname()} failed.')
 			for conn in exceptional:
 				dev = next(dev for dev in self.devs if dev.conn == conn)
-				logging.debug(f'disconnected')
+				logging.info(f'Disconnecting from {dev.addr} because of socket error.')
 				dev.disconnect()
 			if self.sock in readable:
 				# Perform DTLS handshake with a newly-connected SED
+				self.watchdog.feed('Accepting new connection.')
 				stream_conn, _ = self.sock.accept()
 				buffers = tls.ServerContext(self.dtls_conf).wrap_buffers()
 				conn = ScewlSocket(stream_conn, buffers)
 				peername = int(conn.getpeername())
 				if peername is not None:
-					logging.debug(f'New connection from {peername}.')
+					logging.info(f'New connection from {peername}.')
 					if peername in self.devs:
 						self.devs[peername].new_conn(conn)
 					else:
@@ -381,8 +392,9 @@ class SSS:
 			for conn in readable:
 				# Handle request from an already-connected SED
 				dev = next(dev for dev in self.devs.values() if dev.conn == conn)
+				self.watchdog.feed(f'Handling peer {dev.addr}.')
 				dev.handle()
-				self.watchdog.feed()
+				self.watchdog.feed(f'Finished handling peer {dev.addr}.')
 
 
 def parse_args():
