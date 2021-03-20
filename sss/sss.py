@@ -50,11 +50,20 @@ logging.basicConfig(
 
 
 class Watchdog:
+	def __init__(self):
+		self.thread = None
+
 	def start(self):
 		self.last_fed = datetime.now()
 		self.last_food = None
+		self._stop = False
 		self.thread = threading.Thread(target=self._run, name="watchdog")
 		self.thread.start()
+
+	def stop(self):
+		if self.thread:
+			self._stop = True
+			self.thread.join()
 
 	def feed(self, food):
 		self.last_fed = datetime.now()
@@ -63,6 +72,8 @@ class Watchdog:
 	def _run(self):
 		while(True):
 			sleep(2)
+			if self._stop:
+				return
 			if datetime.now() - self.last_fed > timedelta(seconds=15):
 				logging.fatal(f'Watchdog timeout! SSS is frozen. The last food that was fed to the watchdog was {repr(self.last_food)}')
 
@@ -364,44 +375,49 @@ class SSS:
 	def start(self):
 		self.sock.listen()
 		self.watchdog = Watchdog()
-		self.watchdog.start()
-		logging.info('SSS started.')
-		# Serve forever
-		while True:
-			sockets = [self.sock] + [dev.conn for dev in self.devs.values() if dev.conn is not None]
-			self.watchdog.feed('About to wait for sockets to be ready.')
-			readable, _, exceptional = select.select(sockets, [], sockets, 1)
-			self.watchdog.feed('Finished waiting for sockets to be ready.')
-			if self.sock in exceptional:
-				raise Exception(f'The SSS server socket {self.sock.getsockname()} failed.')
-			for conn in exceptional:
-				dev = next(dev for dev in self.devs if dev.conn == conn)
-				logging.info(f'Disconnecting from {dev.addr} because of socket error.')
-				dev.disconnect()
-			if self.sock in readable:
-				# Perform DTLS handshake with a newly-connected SED
-				self.watchdog.feed('Accepting new connection.')
-				stream_conn, _ = self.sock.accept()
-				buffers = tls.ServerContext(self.dtls_conf).wrap_buffers()
-				conn = ScewlSocket(stream_conn, buffers)
-				peername = int(conn.getpeername())
-				if peername is not None:
-					logging.info(f'New connection from {peername}.')
-					if peername in self.devs:
-						self.devs[peername].new_conn(conn)
-					else:
-						self.devs[peername] = Device(self, conn, peername)
-				readable.remove(self.sock)
-			for conn in readable:
-				# Handle request from an already-connected SED
-				dev = next(dev for dev in self.devs.values() if dev.conn == conn)
-				if not dev.conn.is_readable():
-					logging.info(f'Disconnecting from {dev.addr} because the socket appears to be closed.')
+		try:
+			self.watchdog.start()
+			logging.info('SSS started.')
+			# Serve forever
+			while True:
+				sockets = [self.sock] + [dev.conn for dev in self.devs.values() if dev.conn is not None]
+				self.watchdog.feed('About to wait for sockets to be ready.')
+				readable, _, exceptional = select.select(sockets, [], sockets, 1)
+				self.watchdog.feed('Finished waiting for sockets to be ready.')
+				if self.sock in exceptional:
+					raise Exception(f'The SSS server socket {self.sock.getsockname()} failed.')
+				for conn in exceptional:
+					dev = next(dev for dev in self.devs if dev.conn == conn)
+					logging.info(f'Disconnecting from {dev.addr} because of socket error.')
 					dev.disconnect()
-					continue
-				self.watchdog.feed(f'Handling peer {dev.addr}.')
-				dev.handle()
-				self.watchdog.feed(f'Finished handling peer {dev.addr}.')
+				if self.sock in readable:
+					# Perform DTLS handshake with a newly-connected SED
+					self.watchdog.feed('Accepting new connection.')
+					stream_conn, _ = self.sock.accept()
+					buffers = tls.ServerContext(self.dtls_conf).wrap_buffers()
+					conn = ScewlSocket(stream_conn, buffers)
+					peername = int(conn.getpeername())
+					if peername is not None:
+						logging.info(f'New connection from {peername}.')
+						if peername in self.devs:
+							self.devs[peername].new_conn(conn)
+						else:
+							self.devs[peername] = Device(self, conn, peername)
+					readable.remove(self.sock)
+				for conn in readable:
+					# Handle request from an already-connected SED
+					dev = next(dev for dev in self.devs.values() if dev.conn == conn)
+					if not dev.conn.is_readable():
+						logging.info(f'Disconnecting from {dev.addr} because the socket appears to be closed.')
+						dev.disconnect()
+						continue
+					self.watchdog.feed(f'Handling peer {dev.addr}.')
+					dev.handle()
+					self.watchdog.feed(f'Finished handling peer {dev.addr}.')
+		except:
+			logging.info('SSS shutting down...')
+			self.watchdog.stop()
+			raise
 
 
 def parse_args():
