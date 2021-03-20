@@ -143,7 +143,6 @@ class ScewlSocket(tls.TLSWrappedSocket):
 			self._buffer.write(message)
 			self._send_scewl()
 			bytes_sent += len(message)
-		self._recv_scewl()
 		return bytes_sent
 
 	def getpeername(self):
