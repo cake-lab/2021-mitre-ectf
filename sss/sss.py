@@ -12,9 +12,12 @@
 
 import argparse
 from contextlib import suppress
+import cProfile
 from datetime import datetime, timedelta
+import io
 import logging
 import os
+import pstats
 from secrets import token_bytes
 import socket
 import select
@@ -423,10 +426,25 @@ class SSS:
 def parse_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('sockf', help='Path to socket to bind the SSS to')
+	parser.add_argument('--profile', dest='profile', action='store_true')
 	return parser.parse_args()
 
 
 if __name__ == '__main__':
 	args = parse_args()
 	sss = SSS(args.sockf)
-	sss.start()
+	if args.profile:
+		logging.info('Performance profiling enabled.')
+		profile = cProfile.Profile()
+		profile.enable()
+		try:
+			sss.start()
+		finally:
+			profile.disable()
+			sio = io.StringIO()
+			sortby = pstats.SortKey.CUMULATIVE
+			ps = pstats.Stats(profile, stream=sio).sort_stats(sortby)
+			ps.print_stats()
+			logging.info(sio.getvalue())
+	else:
+		sss.start()
