@@ -90,8 +90,8 @@ void mbedtls_platform_zeroize(void *buf, size_t len) {
  */
 void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t len) {
   scewl_sss_msg_t *msg;
+  const uint16_t cpu_required_len = sizeof(msg->dev_id) + sizeof(msg->op);
   const unsigned char *ca, *crt, *key, *sync_key, *sync_salt, *data_key, *data_salt, *first_sed, *entropy;
-  uint8_t illegal_len = 0;
 
   if (len >= sizeof(scewl_sss_msg_t)) {
     msg = (scewl_sss_msg_t *) data;
@@ -101,9 +101,11 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
 
           // Check for correct SCUM data length
           if (msg->sync_key_len + msg->sync_salt_len + msg->data_key_len + msg->data_salt_len + msg->sync_len + msg->entropy_len != S_KEY_LEN*2 + S_SALT_LEN*2 + 1 + ENTROPY_POOL_SIZE) {
-            illegal_len = 1;
             break;
           }
+
+          mbedtls_printf("Received good registration response.");
+          send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, cpu_required_len, data);
 
           ca = (const unsigned char *) data + sizeof(scewl_sss_msg_t);
           crt = (const unsigned char *) data + sizeof(scewl_sss_msg_t) + msg->ca_len;
@@ -116,7 +118,6 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
           entropy = (const unsigned char *) sync_key + S_KEY_LEN*2 + S_SALT_LEN*2 + 1;
 
           dtls_rekey(dtls_state, ca, msg->ca_len, crt, msg->crt_len, key, msg->key_len, true, true);
-          mbedtls_printf("Registered.");
 
           // Setup runtime RNG state -- happens by default in SCUM
           rng_setup_runtime_pool((unsigned char *)entropy, msg->entropy_len);
@@ -136,8 +137,13 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
             scum_sync(scum_ctx_ref);
             mbedtls_printf("Sent SCUM sync request...");
           }
-          break;
+
+          mbedtls_printf("Registered.");
+          return;
+
         case SCEWL_SSS_DEREG:
+          mbedtls_printf("Received good deregistration response.");
+          send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, cpu_required_len, data);
           dtls_rekey_to_default(dtls_state, true, false);
           // Setup initial RNG state
           rng_clear_runtime_pool();
@@ -149,16 +155,9 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
           // Clear SCUM
           scum_init(scum_ctx_ref);
           mbedtls_printf("Deregistered.");
-          break;
+          return;
         default:
           mbedtls_printf("Received response from SSS with invalid status.");
-      }
-      if (!illegal_len) {
-        // forward message to CPU -- clear data except for device ID and op
-        const uint16_t cpu_required_len = sizeof(msg->dev_id) + sizeof(msg->op);
-        // memset((unsigned char *)data+cpu_required_len, 0, len - cpu_required_len);
-        send_msg(CPU_INTF, SCEWL_SSS_ID, SCEWL_ID, cpu_required_len, data);
-        return;
       }
     }
   }
