@@ -60,7 +60,7 @@ class Watchdog:
 		self.last_fed = datetime.now()
 		self.last_food = None
 		self._stop = False
-		self.thread = threading.Thread(target=self._run, name="watchdog")
+		self.thread = threading.Thread(target=self._run, name="Watchdog")
 		self.thread.start()
 
 	def stop(self):
@@ -79,6 +79,52 @@ class Watchdog:
 				return
 			if datetime.now() - self.last_fed > timedelta(seconds=15):
 				logging.fatal(f'Watchdog timeout! SSS is frozen. The last food that was fed to the watchdog was {repr(self.last_food)}')
+
+class RsaKeyGenerator:
+	def __init__(self):
+			self.thread = None
+			self.keys = []
+			self.keys_lock = threading.Lock()
+
+	def start(self):
+		self._stop = False
+		self._pause = False
+		self.thread = threading.Thread(target=self._run, name="RsaKeyGenerator")
+		self.thread.start()
+
+	def stop(self):
+		if self.thread:
+			self._stop = True
+			self.thread.join()
+
+	def pause(self):
+		self._pause = True
+
+	def resume(self):
+		self._pause = False
+
+	def get_key(self):
+		with self.keys_lock:
+			if not self.keys:
+				logging.warning('Key generator ran out of pre-generated keys.')
+				key = pk.RSA()
+				key.generate()
+				return key
+			return self.keys.pop(0)
+
+	def _run(self):
+		while(True):
+			sleep(0)
+			if self._stop:
+				return
+			if not self._pause:
+				with self.keys_lock:
+					if len(self.keys) < 20:
+						logging.debug('Key generator is now generating.')
+						key = pk.RSA()
+						key.generate()
+						self.keys.append(key)
+						logging.debug('Key generator finished generating.')
 
 
 def block(callback, *args, **kwargs):
@@ -180,13 +226,15 @@ class ScewlSocket(tls.TLSWrappedSocket):
 
 
 class Device:
-	def __init__(self, sss, conn, addr):
+	def __init__(self, sss, conn, addr, keygen):
 		self.sss = sss
 		self.conn = conn
 		self.addr = addr
+		self.keygen = keygen
 		self.handshake_complete = False
 		self.registered = False
 		self.runtime_cert = None
+		self.expected_pubkey = None
 		self.datetime_start = None
 		self.profile = None
 
@@ -237,10 +285,11 @@ class Device:
 				logging.warning(f'Handshake was successful with peer {self.addr}, who is not properly provisioned.')
 				self.reset()
 				return
-			expected_certificate = x509.CRT.from_file(certificate_file)
-			expected_pubkey = expected_certificate.subject_public_key
+			if self.expected_pubkey is None:
+				expected_certificate = x509.CRT.from_file(certificate_file)
+				self.expected_pubkey = expected_certificate.subject_public_key
 			peer_pubkey = self.conn._buffer.context.get_peer_public_key()
-			if peer_pubkey != expected_pubkey:
+			if peer_pubkey != self.expected_pubkey:
 				logging.warning(f'Handshake was successful with peer {self.addr}, who is using a different public key than expected.')
 				self.reset()
 				return
@@ -304,8 +353,7 @@ class Device:
 
 	def register(self):
 		now = datetime.utcnow()
-		key = pk.RSA()
-		key.generate()
+		key = self.keygen.get_key()
 		csr = x509.CSR.new(key, f'CN={self.addr}', hashlib.sha256())
 		self.runtime_cert = self.sss.runtime_ca_cert.sign(
 			csr, self.sss.runtime_ca_key,
@@ -395,15 +443,19 @@ class SSS:
 	def start(self):
 		self.sock.listen()
 		self.watchdog = Watchdog()
+		self.keygen = RsaKeyGenerator()
 		try:
 			self.watchdog.start()
+			self.keygen.start()
 			logging.info('SSS started.')
 			# Serve forever
 			while True:
+				self.keygen.resume()
 				sockets = [self.sock] + [dev.conn for dev in self.devs.values() if dev.conn is not None]
 				self.watchdog.feed('About to wait for sockets to be ready.')
 				readable, _, exceptional = select.select(sockets, [], sockets, 1)
 				self.watchdog.feed('Finished waiting for sockets to be ready.')
+				self.keygen.pause()
 				if self.sock in exceptional:
 					raise Exception(f'The SSS server socket {self.sock.getsockname()} failed.')
 				for conn in exceptional:
@@ -422,7 +474,7 @@ class SSS:
 						if peername in self.devs:
 							self.devs[peername].new_conn(conn)
 						else:
-							self.devs[peername] = Device(self, conn, peername)
+							self.devs[peername] = Device(self, conn, peername, self.keygen)
 					readable.remove(self.sock)
 				for conn in readable:
 					# Handle request from an already-connected SED
