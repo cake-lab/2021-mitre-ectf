@@ -2,6 +2,7 @@ import select
 import socket
 import struct
 import sys
+import datetime
 
 OUTPUT_FILENAME = 'faa.log'
 FAA_SCEWL_ID = 2
@@ -23,7 +24,7 @@ try:
 		data = b''
 		while len(data) < ln:
 			data += sock.recv(ln - len(data))
-		msgs.append(f'{src}->{tgt} ({len(data)}B): {repr(data)}')
+		msgs.append(f'{datetime.datetime.now()} -- {src}->{tgt} ({len(data)}B): {repr(data)}')
 
 		# If message is a test FAA message, send back to the sender
 		if (tgt == FAA_SCEWL_ID and data.startswith(TEST_PREFACE)):

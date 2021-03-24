@@ -31,6 +31,9 @@ int main(void) {
 
   scewl_init();
 
+  char m1[] = "CPU Registration Started";
+  scewl_send(SCEWL_FAA_ID, 25, m1);
+
   // register
   if (scewl_register() != SCEWL_OK) {
     fprintf(log, "BAD REGISTRATION! Reregistering...\n");
@@ -43,6 +46,9 @@ int main(void) {
       return 1;
     }
   }
+
+  char m2[] = "CPU Registration Finished";
+  scewl_send(SCEWL_FAA_ID, 26, m2);
 
   // loop until quit received
   while (data[0] != 'q' || data[1] != 'u' ||
