@@ -26,6 +26,7 @@ IPATH+=${VPATH}
 
 # add flags to pass to the compiler
 CFLAGS+=-DSCEWL_ID=${SCEWL_ID}
+CFLAGS+=-O1
 
 ifdef DEBUG_LEVEL
 CFLAGS+=-DDEBUG_LEVEL=${DEBUG_LEVEL}
