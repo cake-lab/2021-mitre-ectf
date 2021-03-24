@@ -188,6 +188,7 @@ class Device:
 		self.registered = False
 		self.runtime_cert = None
 		self.datetime_start = None
+		self.profile = None
 
 	def new_conn(self, conn):
 		self.conn = conn
@@ -205,6 +206,14 @@ class Device:
 			else:
 				logging.debug(f'Session with {self.addr} took {duration}.')
 			self.datetime_start = None
+		if args.profile_registration and self.profile is not None:
+			self.profile.disable()
+			sio = io.StringIO()
+			sortby = pstats.SortKey.CUMULATIVE
+			ps = pstats.Stats(self.profile, stream=sio).sort_stats(sortby)
+			ps.print_stats()
+			logging.info(f'Results of performance profiling for transaction with peer {self.addr}:' + sio.getvalue())
+			self.profile = None
 		self.handshake_complete = False
 
 	def handle(self):
@@ -244,6 +253,10 @@ class Device:
 		except tls.HelloVerifyRequest:
 			logging.debug(f'Hello verification requested.')
 			self.datetime_start = datetime.now()
+			if args.profile_registration:
+				logging.info(f'Beginning performance profiling for transaction with peer {self.addr}.')
+				self.profile = cProfile.Profile()
+				self.profile.enable()
 		except TLSError as err:
 			if err.err != 30976:
 				logging.exception(f'Handshake with {self.addr} failed.')
@@ -272,6 +285,11 @@ class Device:
 				self.registered = True
 				logging.info(f'Client {self.addr} registered.')
 		elif op == DEREG:
+			if args.profile_registration and self.profile is not None:
+				# This transaction turned out to be a deregistration, not a registration, so shut down the profiler.
+				self.profile.disable()
+				self.profile = None
+				logging.info(f'Aborted performance profiling for transaction with peer {self.addr}.')
 			if self.registered:
 				resp = self.deregister()
 				self.registered = False
@@ -426,6 +444,7 @@ def parse_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('sockf', help='Path to socket to bind the SSS to')
 	parser.add_argument('--profile', dest='profile', action='store_true')
+	parser.add_argument('--profile-registration', dest='profile_registration', action='store_true')
 	return parser.parse_args()
 
 
