@@ -189,83 +189,83 @@ int main(void) {
   scewl_init();
 
   // register
-  fprintf(log, "Registering...\n");
+  fprintf(log, "SED %d: Registering...\n", SCEWL_ID);
   if (scewl_register() != SCEWL_OK) {
     fprintf(log, "BAD REGISTRATION!\n");
     return 1;
   }
 
   for (i = 0; i < 2; i++) {
-    fprintf(log, "Sending unicast message...\n");
+    fprintf(log, "SED %d: Sending unicast message...\n", SCEWL_ID);
     scewl_send(TGT_ID, strlen(messages[i]) + 1, messages[i]);
 
     do {
       // receive response (block until response received)
-      fprintf(log, "Waiting for response...\n");
+      fprintf(log, "SED %d: Waiting for response...\n", SCEWL_ID);
       memset(data, 0, BUF_SZ);
       scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
     } while (tgt_id != SCEWL_ID);
 
     // check if response matches
     if (!strcmp(messages[i], data)) {
-      fprintf(log, "Unicast %d successful.\n", i);
+      fprintf(log, "SED %d: Unicast %d successful.\n", SCEWL_ID, i);
     } else {
-      fprintf(log, "Unicast %d failed: bad response!\n", i);
+      fprintf(log, "SED %d: Unicast %d failed: bad response!\n", SCEWL_ID, i);
       failure = true;
     }
 
-    fprintf(log, "Sending broadcast message...\n");
+    fprintf(log, "SED %d: Sending broadcast message...\n", SCEWL_ID);
     scewl_brdcst(strlen(messages[i]) + 1, messages[i]);
 
     do {
       // receive response (block until response received)
-      fprintf(log, "Waiting for response...\n");
+      fprintf(log, "SED %d: Waiting for response...\n", SCEWL_ID);
       memset(data, 0, BUF_SZ);
       scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
     } while (tgt_id != SCEWL_ID);
 
     // check if response matches
     if (!strcmp(messages[i], data)) {
-      fprintf(log, "Broadcast %d successful.\n", i);
+      fprintf(log, "SED %d: Broadcast %d successful.\n", SCEWL_ID, i);
     } else {
-      fprintf(log, "Broadcast %d failed: bad response!\n", i);
+      fprintf(log, "SED %d: Broadcast %d failed: bad response!\n", SCEWL_ID, i);
       failure = true;
     }
 
-    fprintf(log, "Sending FAA message...\n");
+    fprintf(log, "SED %d: Sending FAA message...\n", SCEWL_ID);
     scewl_send(SCEWL_FAA_ID, strlen(messages[i]) + 1, messages[i]);
 
     do {
       // receive response (block until response received)
-      fprintf(log, "Waiting for response...\n");
+      fprintf(log, "SED %d: Waiting for response...\n", SCEWL_ID);
       memset(data, 0, BUF_SZ);
       scewl_recv(data, &src_id, &tgt_id, BUF_SZ, 1);
     } while (tgt_id != SCEWL_ID);
 
     // check if response matches
     if (!strcmp(messages[i], data)) {
-      fprintf(log, "FAA message %d successful.\n", i);
+      fprintf(log, "SED %d: FAA message %d successful.\n", SCEWL_ID, i);
     } else {
-      fprintf(log, "FAA message %d failed: bad response!\n", i);
+      fprintf(log, "SED %d: FAA message %d failed: bad response!\n", SCEWL_ID, i);
       failure = true;
     }
   }
 
   // deregister
-  fprintf(log, "Deregistering...\n");
+  fprintf(log, "SED %d: Deregistering...\n", SCEWL_ID);
   if (scewl_deregister() != SCEWL_OK) {
     fprintf(log, "BAD DEREGISTRATION!\n");
     failure = true;
   }
 
   for (i = 0; i < 3; i++) {
-    fprintf(log, "Registering...\n");
+    fprintf(log, "SED %d: Registering...\n", SCEWL_ID);
     if (scewl_register() != SCEWL_OK) {
       fprintf(log, "BAD REGISTRATION!\n");
       failure = true;
       break;
     }
-    fprintf(log, "Deregistering...\n");
+    fprintf(log, "SED %d: Deregistering...\n", SCEWL_ID);
     if (scewl_deregister() != SCEWL_OK) {
       fprintf(log, "BAD DEREGISTRATION!\n");
       failure = true;
