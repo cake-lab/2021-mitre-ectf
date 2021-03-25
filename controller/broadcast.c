@@ -594,6 +594,103 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
 
 /*
  *
+ * Arbitration Operations
+ *
+ */
+
+// Process outgoing arbitration request
+static int scum_arb_req_send(struct scum_ctx *ctx)
+{
+  struct scum_sync_session *session;
+  struct scum_hdr *hdr;
+  int ret;
+
+  session = &ctx->sync_session;
+
+  // Proceed if not disabled
+  if (ctx->status == S_ERROR) {
+    mbedtls_printf("Refusing to send an arbitration request while in error state");
+    return S_PASS;
+  }
+
+  // Construct header in output buffer
+  hdr = (struct scum_hdr *)session->stage_buf;
+  hdr->type = S_ARB_REQ;
+  hdr->seq_number = 0;
+  hdr->length = SCUM_SYNC_REQ_LEN;
+  hdr->end_marker = 1;
+
+  // Create random message
+  ret = mbedtls_hmac_drbg_random(&session->rng, session->sync_bytes, SCUM_SYNC_REQ_LEN);
+  if (ret != 0) {
+    mbedtls_printf("failed! mbedtls_hmac_drbg_random returned -%#06x", (unsigned int) -ret);
+    return S_FATAL_ERROR;
+  }
+
+  // Encrypt and send
+  ret = scum_push_frame(&session->crypto, (char *)session->sync_bytes, session->stage_buf);
+  if (ret < 0) {
+    mbedtls_printf("Failed to send sync request frame");
+    return ret;
+  }
+
+  // Update status
+  ctx->status = S_ARBITRATION;
+
+  // Setup hardware timer
+  timers_set_sync_timeout(SYNC_REQ_TIMEOUT);
+
+  return 0;
+
+}
+
+// Process incoming arbitration request
+static int scum_arb_req_receive(struct scum_ctx *ctx)
+{
+  struct scum_sync_session *sync_session;
+  struct scum_data_session *data_session;
+  struct scum_hdr *hdr;
+  uint8_t msg_buf[SCUM_SYNC_REQ_LEN];
+  int ret;
+
+  sync_session = &ctx->sync_session;
+  data_session = &ctx->data_session;
+
+  // Get header
+  hdr = (struct scum_hdr *)data;
+
+  // Only handle request when idle or doing arbitration
+  if (ctx->status != S_IDLE && ctx->status != S_ARBITRATION) {
+    mbedtls_printf("Ignoring arbitration request message");
+    return S_PASS;
+  }
+
+  // Check message length
+  if (hdr->length != SCUM_SYNC_REQ_LEN) {
+    mbedtls_printf("Got an arbitration request with invalid message length");
+    return S_SOFT_ERROR;
+  }
+
+  // Decrypt
+  ret = scum_absorb_frame(&sync_session->crypto, data, (char *)msg_buf);
+  if (ret < 0) {
+    mbedtls_printf("Failed to decrypt SCUM frame");
+    return ret;
+  }
+
+  // If trying to arbitrate, relinquish control if you have the higher ID
+  if (ctx->status == S_ARBITRATION) {
+    ctx->status = S_RECV_HOLD;
+  } else {
+    ctx->status = S_RECV;
+  }
+
+  return 0;
+}
+
+
+/*
+ *
  * Sync Session Operations
  *
  */
@@ -870,6 +967,14 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data, size_t dat
         mbedtls_printf("Synchronized to SCUM data session");
       }
       break;
+    case S_ARB_REQ:
+      ret = scum_arb_req_receive(ctx, src_id, data);
+      if (ret == S_SOFT_ERROR) {
+        mbedtls_printf("Failed to handle arbitration request");
+      } else if (ret == S_FATAL_ERROR) {
+        mbedtls_printf("Fatal error handling arbitration request");
+        scum_fatal_error(ctx);
+      }
     case S_DATA:
       ret = scum_data_receive(ctx, src_id, data);
       if (ret == S_SOFT_ERROR) {
@@ -906,6 +1011,20 @@ void scum_sync(struct scum_ctx *ctx)
     mbedtls_printf("Failed to send sync request");
   } else if (ret == S_FATAL_ERROR) {
     mbedtls_printf("Fatal error sending sync request");
+    scum_fatal_error(ctx);
+  }
+}
+
+// Request control of broadcast system
+void scum_arbitrate(struct scum_ctx *ctx)
+{
+  int ret;
+  ret = scum_arb_req_send(ctx);
+
+  if (ret == S_SOFT_ERROR) {
+    mbedtls_printf("Failed to arbitration request");
+  } else if (ret == S_FATAL_ERROR) {
+    mbedtls_printf("Fatal error sending arbitration request");
     scum_fatal_error(ctx);
   }
 }

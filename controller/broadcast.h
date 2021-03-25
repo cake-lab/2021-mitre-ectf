@@ -69,6 +69,7 @@ enum scum_error_type {
 enum scum_msg_type {
   S_SYNC_REQ,
   S_SYNC_RESP,
+  S_ARB_REQ,
   S_DATA
 };
 
@@ -78,7 +79,9 @@ enum scum_status {
   S_UNSYNC,
   S_WAIT_SYNC,
   S_IDLE,
+  S_ARBITRATING,
   S_RECV,
+  S_RECV_HOLDING,
   S_DONE
 };
 

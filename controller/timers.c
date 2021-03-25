@@ -144,7 +144,7 @@ int timers_get_delay(void *data)
 }
 
 // Function used by SCUM to configure a synq request timeout
-void timers_set_sync_timeout(uint32_t ms)
+void timers_set_scum_timeout(uint32_t ms)
 {
   uint32_t load_val;
 
