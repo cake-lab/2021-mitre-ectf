@@ -53,7 +53,7 @@
 
 // Timing requirements
 #define SYNC_REQ_TIMEOUT 10000 // 10 seconds
-#define ARB_REQ_TIMEOUT 5000 // 5 seconds
+#define ARB_REQ_TIMEOUT 10000 // 10 seconds
 
 /*
  * Custom Types/Structs
