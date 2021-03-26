@@ -237,7 +237,7 @@ int main() {
 
     // Handle outgoing message from CPU
     if (intf_avail(CPU_INTF)) {
-      if (dtls_state.status != IDLE || scum_ctx.status == S_WAIT_SYNC || scum_ctx.status == S_ARBITRATING || scum_ctx.status == S_RECV_WAIT || scum_ctx.status == S_RECV) {
+      if (dtls_state.status != IDLE || (scum_ctx.status != S_IDLE && scum_ctx.status != S_UNSYNC)) {
         // mbedtls_printf("There is a message waiting on the CPU interface.");
       } else {
 

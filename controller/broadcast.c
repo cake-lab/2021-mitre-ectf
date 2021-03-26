@@ -607,7 +607,7 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
     mbedtls_printf("Received broadcast from %d: %.*s", session->recv_src_id, session->in_received, flash_get_buf(session->app_fbuf));
 
     // Continue to let other defeated devices send their messages
-    if (session->defeated_dev_count >= 1) {
+    if (session->defeated_dev_count > 0) {
       // Search for the sender in the list of defeated SEDs from the last arbitration
       for (int i = 0; i < MAX_SEDS; i++) {
         if (session->defeated_ids[i] == session->recv_src_id) {
@@ -617,12 +617,13 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
         }
       }
       mbedtls_printf("%d devices from my arbitration have yet to send", session->defeated_dev_count);
-      ctx->status = S_RECV_WAIT;
-    }
 
-    // Only become available if all the defeated SEDs send
-    if (session->defeated_dev_count == 0) {
-      ctx->status = S_IDLE;
+      // Only become available if all the defeated SEDs send
+      if (session->defeated_dev_count == 0) {
+        ctx->status = S_IDLE;
+      } else {
+        ctx->status = S_RECV_WAIT;
+      } 
     }
 
     // Try sending message if blocked last time
@@ -686,7 +687,7 @@ static int scum_arb_req_send(struct scum_ctx *ctx)
   data_session->arbitration_lost = 0;
   data_session->defeated_dev_count = 0;
   for (int i = 0; i < MAX_SEDS; i++) {
-    session->defeated_ids[i] = 0;
+    data_session->defeated_ids[i] = 0;
   }
 
   mbedtls_printf("Sent arbitration request");
