@@ -18,7 +18,7 @@
 #define TAG STR(SCEWL_ID) ":"
 #define FMT_MSG(M) TAG M ";"
 
-#define LEN 256
+#define LEN 10
 #define SHIFT 3
 
 #define send_str(M) scewl_send(SCEWL_FAA_ID, strlen(M), M)
@@ -54,9 +54,9 @@ int main(void) {
   while (1) {
     scewl_brdcst(LEN, odata);
     fprintf(log, "%d: Sent broadcast\n", SCEWL_ID);
-    sleep(30);
+    sleep(15);
 
-    for (int n = 0; n < 8; n++) {
+    for (int n = 0; n < 7; n++) {
       // receive new message
       len = scewl_recv(idata, &src_id, &tgt_id, LEN, 0);
 

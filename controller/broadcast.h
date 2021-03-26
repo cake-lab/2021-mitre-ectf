@@ -52,7 +52,7 @@
 #define SCUM_DEFAULT_KDR (2*FRAMES_PER_MSG) // x * 17frames/msg
 
 // Timing requirements
-#define SYNC_REQ_TIMEOUT 5000 // 5 seconds
+#define SYNC_REQ_TIMEOUT 10000 // 10 seconds
 
 /*
  * Custom Types/Structs
@@ -114,6 +114,7 @@ struct scum_data_session {
   uint64_t seq_number;
 
   uint8_t arbitration_lost;
+  uint8_t arbitrated_dev_count;
 
   uint16_t in_received;
   uint16_t out_remaining;
