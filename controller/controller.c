@@ -247,9 +247,13 @@ int main() {
 
         if (hdr.tgt_id == SCEWL_BRDCST_ID) { // Send Broadcast
 
+          // Send arbitration request before reading the message, since large messages can take a long time
+          scum_arbitrate(&scum_ctx);
           len = read_body_flash(CPU_INTF, &hdr, &SCUM_OUT_FBUF, SCEWL_MAX_DATA_SZ, 1);
           scum_len = len;
-          scum_arbitrate(&scum_ctx);
+          // Start the arbitration timer
+          scum_arbitrate_continue(&scum_ctx);
+          
 
         } else if (hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
 

@@ -612,6 +612,7 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
     if (session->arbitration_lost == 1) {
       mbedtls_printf("Trying to send pending message");
       scum_arbitrate(ctx);
+      scum_arbitrate_continue(ctx);
     }
   }
 
@@ -667,9 +668,6 @@ static int scum_arb_req_send(struct scum_ctx *ctx)
   ctx->status = S_ARBITRATING;
   data_session->arbitration_lost = 0;
   data_session->arbitrated_dev_count = 0;
-
-  // Setup hardware timer
-  timers_set_scum_timeout(SYNC_REQ_TIMEOUT);
 
   mbedtls_printf("Sent arbitration request");
 
@@ -1075,6 +1073,18 @@ void scum_arbitrate(struct scum_ctx *ctx)
   } else if (ret == S_FATAL_ERROR) {
     mbedtls_printf("Fatal error sending arbitration request");
     scum_fatal_error(ctx);
+  }
+}
+
+// Start timer for arbitration phase
+void scum_arbitrate_continue(struct scum_ctx *ctx)
+{
+
+  if (ctx->status == S_ARBITRATING) {
+    // Setup hardware timer
+    timers_set_scum_timeout(SYNC_REQ_TIMEOUT);
+  } else {
+    mbedtls_printf("Cannot set arbitration timeout if a request has not been sent");
   }
 }
 
