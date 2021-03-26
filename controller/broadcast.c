@@ -217,9 +217,13 @@ static void scum_data_init(struct scum_data_session *session)
   session->out_msg_len = 0;
   session->recv_src_id = 0;
   session->arbitration_lost = 0;
-  session->arbitrated_dev_count = 0;
+  session->defeated_dev_count = 0;
   session->stage_buf = NULL;
   session->app_fbuf = NULL;
+
+  for (int i = 0; i < MAX_SEDS; i++) {
+    session->defeated_ids[i] = 0;
+  }
 }
 
 // Setup SCUM data session
@@ -234,9 +238,13 @@ static int scum_data_setup(struct scum_data_session *session, char *key, char *s
   session->out_msg_len = 0;
   session->recv_src_id = 0;
   session->arbitration_lost = 0;
-  session->arbitrated_dev_count = 0;
+  session->defeated_dev_count = 0;
   session->stage_buf = stage_buf;
   session->app_fbuf = app_fbuf;
+
+  for (int i = 0; i < MAX_SEDS; i++) {
+    session->defeated_ids[i] = 0;
+  }
 
   // Set up crypto context
   ret = scum_crypto_setup(&session->crypto, key, salt, SCUM_DEFAULT_KDR);
@@ -478,7 +486,7 @@ static int scum_data_send(struct scum_ctx *ctx, char *data, size_t data_len)
     mbedtls_printf("Sent broadcast: %.*s", session->out_msg_len, data);
 
     // If SED beat other devices during arbitration, give them a chance to send
-    if (session->arbitrated_dev_count > 0) {
+    if (session->defeated_dev_count > 0) {
       ctx->status = S_RECV_WAIT;
     } else {
       ctx->status = S_IDLE;
@@ -598,13 +606,22 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
     handle_brdcst_recv(flash_get_buf(session->app_fbuf), session->recv_src_id, session->in_received);
     mbedtls_printf("Received broadcast from %d: %.*s", session->recv_src_id, session->in_received, flash_get_buf(session->app_fbuf));
 
-    // Continue to let other devices send if you beat them
-    if (session->arbitrated_dev_count > 1) {
-      session->arbitrated_dev_count--;
-      mbedtls_printf("%d devices from my arbitration have yet to send", session->arbitrated_dev_count);
+    // Continue to let other defeated devices send their messages
+    if (session->defeated_dev_count >= 1) {
+      // Search for the sender in the list of defeated SEDs from the last arbitration
+      for (int i = 0; i < MAX_SEDS; i++) {
+        if (session->defeated_ids[i] == session->recv_src_id) {
+          // Remove SCEWL ID from the list
+          session->defeated_ids[i] = 0;
+          session->defeated_dev_count--;
+        }
+      }
+      mbedtls_printf("%d devices from my arbitration have yet to send", session->defeated_dev_count);
       ctx->status = S_RECV_WAIT;
-    } else {
-      session->arbitrated_dev_count = 0;
+    }
+
+    // Only become available if all the defeated SEDs send
+    if (session->defeated_dev_count == 0) {
       ctx->status = S_IDLE;
     }
 
@@ -667,7 +684,10 @@ static int scum_arb_req_send(struct scum_ctx *ctx)
   // Update status
   ctx->status = S_ARBITRATING;
   data_session->arbitration_lost = 0;
-  data_session->arbitrated_dev_count = 0;
+  data_session->defeated_dev_count = 0;
+  for (int i = 0; i < MAX_SEDS; i++) {
+    session->defeated_ids[i] = 0;
+  }
 
   mbedtls_printf("Sent arbitration request");
 
@@ -708,19 +728,29 @@ static int scum_arb_req_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *d
     return ret;
   }
 
-  // If trying to arbitrate, relinquish control if you have the higher ID
+  // If trying to arbitrate, relinquish control if request sender has lower ID
   if (ctx->status == S_ARBITRATING) {
     if (src_id < SCEWL_ID) {
-      mbedtls_printf("Relinquish to device %d", src_id);
+
       // Give up on sending
       timers_clear_scum_timeout();
       data_session->arbitration_lost = 1;
-      data_session->arbitrated_dev_count = 0;
+
+      // Clear all defeated devices
+      data_session->defeated_dev_count = 0;
+      for (int i = 0; i < MAX_SEDS; i++) {
+        data_session->defeated_ids[i] = 0;
+      }
+
+      // Now wait for the sender
+      mbedtls_printf("Relinquished to device %d", src_id);
       ctx->status = S_RECV_WAIT;
+
     } else {
-      // Keep track of every device you beat
+      // Keep track of every device defeated
       mbedtls_printf("Defeated device %d", src_id);
-      data_session->arbitrated_dev_count++;
+      data_session->defeated_ids[data_session->defeated_dev_count] = src_id;
+      data_session->defeated_dev_count++;
     }
   } else if (ctx->status != S_ERROR) {
     // If not arbitrating, accept any request and start waiting for the data
@@ -1082,7 +1112,7 @@ void scum_arbitrate_continue(struct scum_ctx *ctx)
 
   if (ctx->status == S_ARBITRATING) {
     // Setup hardware timer
-    timers_set_scum_timeout(SYNC_REQ_TIMEOUT);
+    timers_set_scum_timeout(ARB_REQ_TIMEOUT);
   } else {
     mbedtls_printf("Cannot set arbitration timeout if a request has not been sent");
   }
@@ -1095,7 +1125,7 @@ void scum_timeout(struct scum_ctx *ctx, char *data, size_t data_len)
   if (ctx->status == S_WAIT_SYNC) {
     scum_sync(ctx);
   } else if (ctx->status == S_ARBITRATING) {
-    mbedtls_printf("Won arbitration against %d devices. Sending message", ctx->data_session.arbitrated_dev_count);
+    mbedtls_printf("Won arbitration against %d devices. Sending message", ctx->data_session.defeated_dev_count);
     ctx->data_session.arbitration_lost = 0;
     scum_send(ctx, data, data_len);
   }

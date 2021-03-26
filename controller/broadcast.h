@@ -53,6 +53,7 @@
 
 // Timing requirements
 #define SYNC_REQ_TIMEOUT 10000 // 10 seconds
+#define ARB_REQ_TIMEOUT 10000 // 10 seconds
 
 /*
  * Custom Types/Structs
@@ -114,7 +115,8 @@ struct scum_data_session {
   uint64_t seq_number;
 
   uint8_t arbitration_lost;
-  uint8_t arbitrated_dev_count;
+  uint8_t defeated_dev_count;
+  scewl_id_t defeated_ids[MAX_SEDS];
 
   uint16_t in_received;
   uint16_t out_remaining;
