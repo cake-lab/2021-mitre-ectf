@@ -93,7 +93,7 @@ void flash_write_buf(struct flash_buf *dst_buf, char *src_buf, size_t len, char 
   // Handle previous partial write
   // Add minimum of [bytes left in word] and [bytes in src_buf] 
   if (dst_buf->partial_count != 0) {
-    while ((dst_buf->partial_count < 4) && (read_pos < len)) {
+    while ((dst_buf->partial_count < 4) && (read_pos < write_len)) {
       dst_buf->partial_data[dst_buf->partial_count++] = src_buf[read_pos++];
     }
 

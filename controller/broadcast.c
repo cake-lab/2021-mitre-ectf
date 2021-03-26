@@ -766,8 +766,10 @@ static int scum_arb_req_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *d
     } else {
       // Keep track of every device defeated
       mbedtls_printf("Defeated device %d", src_id);
-      data_session->defeated_ids[data_session->defeated_dev_count] = src_id;
-      data_session->defeated_dev_count++;
+      if (data_session->defeated_dev_count < MAX_SEDS) {
+        data_session->defeated_ids[data_session->defeated_dev_count] = src_id;
+        data_session->defeated_dev_count++;
+      }
     }
   } else if (ctx->status != S_ERROR) {
     // If not arbitrating, accept any request and start waiting for the data
