@@ -83,6 +83,8 @@ enum scum_status {
   S_ARBITRATING,
   S_RECV_WAIT,
   S_RECV,
+  S_DISCARD,
+  S_SUCCESS,
   S_DONE
 };
 

@@ -578,12 +578,17 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
 
   // Start new data stream or continue current one (unsynced state will bypass)
   // Should have already witnessed arbitration
+  // If not entering from post-arbitration state, just process the data but don't return anything -- either had an error or joined late
   if (ctx->status == S_RECV_WAIT) {
     session->recv_src_id = src_id;
     session->in_received = 0;
     ctx->status = S_RECV;
+  } else if (ctx->status == S_IDLE) {
+    session->recv_src_id = src_id;
+    session->in_received = 0;
+    ctx->status = S_DISCARD;
   }
-  if (ctx->status == S_RECV) {
+  if (ctx->status == S_RECV || ctx->status == S_DISCARD) {
     // Check the same SED is broadcasting
     if (src_id != session->recv_src_id) {
       mbedtls_printf("Ignoring broadcast from ID %d during broadcast from ID %d", src_id, session->recv_src_id);
@@ -593,19 +598,31 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
     // Handle the frame - check for error or end marker
     ret = scum_data_absorb(session, data);
     if (ret < 0) {
+      // Clear state and data on error
       mbedtls_printf("Failed to absorb SCUM data frame");
+      flash_write_buf(session->app_fbuf, session->stage_buf, 0/*no data*/, 1/*erase*/);
       ctx->status = S_IDLE;
       return ret;
     } else if (ret == 1) {
-      flash_commit_buf(session->app_fbuf);
-      ctx->status = S_DONE;
+
+      // If at end of message, only return if SED was in a valid receiving state
+      if (ctx->status == S_RECV) {
+        flash_commit_buf(session->app_fbuf);
+        ctx->status = S_SUCCESS;
+      } else {
+        flash_write_buf(session->app_fbuf, session->stage_buf, 0/*no data*/, 1/*erase*/);
+        ctx->status = S_DONE;
+      }
     }
   }
-  if (ctx->status == S_DONE) {
+  if (ctx->status == S_SUCCESS) {
     // Send to CPU
     handle_brdcst_recv(flash_get_buf(session->app_fbuf), session->recv_src_id, session->in_received);
     mbedtls_printf("Received broadcast from %d: %.*s", session->recv_src_id, session->in_received, flash_get_buf(session->app_fbuf));
-
+    ctx->status = S_DONE;
+  }
+  if (ctx->status == S_DONE) {
+   
     // Continue to let other defeated devices send their messages
     if (session->defeated_dev_count >= 1) {
       // Search for the sender in the list of defeated SEDs from the last arbitration
