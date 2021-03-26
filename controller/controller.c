@@ -131,7 +131,7 @@ void handle_sss_recv(struct dtls_state *dtls_state, const char* data, uint16_t l
           scum_setup(scum_ctx_ref,
                    (char *)sync_key, (char *)sync_salt,
                    (char *)data_key, (char *)data_salt,
-                   &SCUM_FBUF, *first_sed);
+                   &SCUM_IN_FBUF, *first_sed);
 
           if (scum_ctx_ref->status == S_UNSYNC) {
             scum_sync(scum_ctx_ref);
@@ -176,6 +176,7 @@ int main() {
   // Scewl message info
   scewl_hdr_t hdr;
   int len;
+  int scum_len = 0;
   // Communication protocols
   struct scum_ctx scum_ctx;
   struct dtls_state dtls_state;
@@ -194,6 +195,7 @@ int main() {
   // Enable Timer interrupts
   NVIC_EnableIRQ(Timer0A_IRQn);
   NVIC_EnableIRQ(Timer1A_IRQn);
+  NVIC_EnableIRQ(Timer2A_IRQn);
 
   // Enable global interrupts
   __enable_irq();
@@ -228,15 +230,15 @@ int main() {
       fin_timer_event = 0;
       dtls_check_timers(&dtls_state);
     }
-    if (sync_timer_event) {
-      sync_timer_event = 0;
-      scum_timeout(&scum_ctx);
+    if (scum_timer_event) {
+      scum_timer_event = 0;
+      scum_timeout(&scum_ctx, flash_get_buf(&SCUM_OUT_FBUF), scum_len);
     }
 
     // Handle outgoing message from CPU
     if (intf_avail(CPU_INTF)) {
-      if (dtls_state.status != IDLE || scum_ctx.status == S_WAIT_SYNC || scum_ctx.status == S_RECV) {
-        mbedtls_printf("There is a message waiting on the CPU interface.");
+      if (dtls_state.status != IDLE || scum_ctx.status == S_WAIT_SYNC || scum_ctx.status == S_ARBITRATING || scum_ctx.status == S_RECV_WAIT || scum_ctx.status == S_RECV) {
+        // mbedtls_printf("There is a message waiting on the CPU interface.");
       } else {
 
         // Read header from CPU
@@ -245,8 +247,9 @@ int main() {
 
         if (hdr.tgt_id == SCEWL_BRDCST_ID) { // Send Broadcast
 
-          len = read_body_flash(CPU_INTF, &hdr, &SCUM_FBUF, SCEWL_MAX_DATA_SZ, 1);
-          scum_send(&scum_ctx, flash_get_buf(&SCUM_FBUF), len);
+          len = read_body_flash(CPU_INTF, &hdr, &SCUM_OUT_FBUF, SCEWL_MAX_DATA_SZ, 1);
+          scum_len = len;
+          scum_arbitrate(&scum_ctx);
 
         } else if (hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
 

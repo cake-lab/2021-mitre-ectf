@@ -14,13 +14,15 @@
 extern unsigned long _flash_bufs_start;
 extern unsigned long _faa_buf_start;
 extern unsigned long _dtls_buf_start;
-extern unsigned long _scum_buf_start;
+extern unsigned long _scum_in_buf_start;
+extern unsigned long _scum_out_buf_start;
 
 
 /* System Flash Buffers */
-struct flash_buf DTLS_FBUF = {.start_addr=(uint32_t)&_dtls_buf_start, .partial_data={0,0,0,0}, .partial_count=0, .write_pos=0};
-struct flash_buf SCUM_FBUF = {.start_addr=(uint32_t)&_scum_buf_start, .partial_data={0,0,0,0}, .partial_count=0, .write_pos=0};
 struct flash_buf FAA_FBUF = {.start_addr=(uint32_t)&_faa_buf_start, .partial_data={0,0,0,0}, .partial_count=0, .write_pos=0};
+struct flash_buf DTLS_FBUF = {.start_addr=(uint32_t)&_dtls_buf_start, .partial_data={0,0,0,0}, .partial_count=0, .write_pos=0};
+struct flash_buf SCUM_IN_FBUF = {.start_addr=(uint32_t)&_scum_in_buf_start, .partial_data={0,0,0,0}, .partial_count=0, .write_pos=0};
+struct flash_buf SCUM_OUT_FBUF = {.start_addr=(uint32_t)&_scum_out_buf_start, .partial_data={0,0,0,0}, .partial_count=0, .write_pos=0};
 
 
 /*

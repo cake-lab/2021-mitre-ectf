@@ -18,7 +18,7 @@
 #define TAG STR(SCEWL_ID) ":"
 #define FMT_MSG(M) TAG M ";"
 
-#define LEN 4096
+#define LEN 256
 #define SHIFT 3
 
 #define send_str(M) scewl_send(SCEWL_FAA_ID, strlen(M), M)
@@ -46,14 +46,14 @@ int main(void) {
     return 1;
   }
   fprintf(log, "%d: registered\n", SCEWL_ID);
-  send_str(FMT_MSG("REG"));
+  // send_str(FMT_MSG("REG"));
 
   // wait for start message
   scewl_recv(idata, &src_id, &tgt_id, LEN, 1);
 
   while (1) {
     scewl_brdcst(LEN, odata);
-    fprintf(log, "%d: Sent broadcst\n", SCEWL_ID);
+    fprintf(log, "%d: Sent broadcast\n", SCEWL_ID);
     sleep(30);
 
     for (int n = 0; n < 8; n++) {
@@ -77,22 +77,20 @@ int main(void) {
           if (len != LEN || !ok) {
             sprintf(strbuf, "%d: Bad message from src_id: %d\n", SCEWL_ID, src_id);
             fprintf(log, "%s", strbuf);
-            send_str(strbuf);
-          }
-          mask |= idata[0];
-          if (mask == 0xff) {
+            // send_str(strbuf);
+          } else {
              sprintf(strbuf, "%d: GOOD message from src_id: %d\n", SCEWL_ID, src_id);
              fprintf(log, "%s", strbuf);
-            send_str(strbuf);
+            // send_str(strbuf);
           }
         }
       }
     }
   }
-done:
+  done:
 
   fprintf(log, "%d: Finished\n", SCEWL_ID);
-  send_str(FMT_MSG("DONE"));
+  // send_str(FMT_MSG("DONE"));
 
   // degister
   if (scewl_deregister() != SCEWL_OK) {

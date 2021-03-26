@@ -30,8 +30,8 @@ _FLASH_BUF_SIZE = 0x4000;
 
 MEMORY
 {
-    FLASH (r) : ORIGIN = 0x00000000, LENGTH = 0x00034000
-    BUFS  (r) : ORIGIN = 0x00034000, LENGTH = 0x0000C000
+    FLASH (r) : ORIGIN = 0x00000000, LENGTH = 0x00030000
+    BUFS  (r) : ORIGIN = 0x00030000, LENGTH = 0x00010000
     SRAM (rw) : ORIGIN = 0x20000000, LENGTH = 0x00010000
 }
 
@@ -67,7 +67,9 @@ SECTIONS
         . += _FLASH_BUF_SIZE;
         _dtls_buf_start = .;
         . += _FLASH_BUF_SIZE;
-        _scum_buf_start = .;
+        _scum_in_buf_start = .;
+        . += _FLASH_BUF_SIZE;
+        _scum_out_buf_start = .;
         . += _FLASH_BUF_SIZE;
         _flash_bufs_end = .;
     } > BUFS

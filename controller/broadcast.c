@@ -216,6 +216,7 @@ static void scum_data_init(struct scum_data_session *session)
   session->out_remaining = 0;
   session->out_msg_len = 0;
   session->recv_src_id = 0;
+  session->arbitration_lost = 0;
   session->stage_buf = NULL;
   session->app_fbuf = NULL;
 }
@@ -231,6 +232,7 @@ static int scum_data_setup(struct scum_data_session *session, char *key, char *s
   session->out_remaining = 0;
   session->out_msg_len = 0;
   session->recv_src_id = 0;
+  session->arbitration_lost = 0;
   session->stage_buf = stage_buf;
   session->app_fbuf = app_fbuf;
 
@@ -455,7 +457,8 @@ static int scum_data_send(struct scum_ctx *ctx, char *data, size_t data_len)
   session = &ctx->data_session;
 
   // Start new data stream if not being used (unsynced state will bypass)
-  if (ctx->status == S_IDLE) {
+  // Should have already arbitrated
+  if (ctx->status == S_ARBITRATING) {
     session->out_remaining = data_len;
     session->out_msg_len = data_len;
 
@@ -558,7 +561,8 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
   session = &ctx->data_session;
 
   // Start new data stream or continue current one (unsynced state will bypass)
-  if (ctx->status == S_IDLE) {
+  // Should have already witnessed arbitration
+  if (ctx->status == S_RECV_WAIT) {
     session->recv_src_id = src_id;
     session->in_received = 0;
     ctx->status = S_RECV;
@@ -586,6 +590,12 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
     handle_brdcst_recv(flash_get_buf(session->app_fbuf), session->recv_src_id, session->in_received);
     mbedtls_printf("Received broadcast from %d: %.*s", session->recv_src_id, session->in_received, flash_get_buf(session->app_fbuf));
     ctx->status = S_IDLE;
+
+    // Try sending message if blocked last time
+    if (session->arbitration_lost == 1) {
+      mbedtls_printf("Trying to send pending message");
+      scum_arbitrate(ctx);
+    }
   }
 
   return 0;
@@ -602,13 +612,15 @@ static int scum_data_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data
 static int scum_arb_req_send(struct scum_ctx *ctx)
 {
   struct scum_sync_session *session;
+  struct scum_data_session *data_session;
   struct scum_hdr *hdr;
   int ret;
 
   session = &ctx->sync_session;
+  data_session = &ctx->data_session;
 
-  // Proceed if not disabled
-  if (ctx->status == S_ERROR) {
+  // Proceed if not doing anything
+  if (ctx->status != S_IDLE) {
     mbedtls_printf("Refusing to send an arbitration request while in error state");
     return S_PASS;
   }
@@ -635,17 +647,17 @@ static int scum_arb_req_send(struct scum_ctx *ctx)
   }
 
   // Update status
-  ctx->status = S_ARBITRATION;
+  ctx->status = S_ARBITRATING;
+  data_session->arbitration_lost = 0;
 
   // Setup hardware timer
-  timers_set_sync_timeout(SYNC_REQ_TIMEOUT);
+  timers_set_scum_timeout(SYNC_REQ_TIMEOUT);
 
   return 0;
-
 }
 
 // Process incoming arbitration request
-static int scum_arb_req_receive(struct scum_ctx *ctx)
+static int scum_arb_req_receive(struct scum_ctx *ctx, scewl_id_t src_id, char *data)
 {
   struct scum_sync_session *sync_session;
   struct scum_data_session *data_session;
@@ -660,7 +672,7 @@ static int scum_arb_req_receive(struct scum_ctx *ctx)
   hdr = (struct scum_hdr *)data;
 
   // Only handle request when idle or doing arbitration
-  if (ctx->status != S_IDLE && ctx->status != S_ARBITRATION) {
+  if (ctx->status != S_IDLE && ctx->status != S_ARBITRATING) {
     mbedtls_printf("Ignoring arbitration request message");
     return S_PASS;
   }
@@ -679,10 +691,15 @@ static int scum_arb_req_receive(struct scum_ctx *ctx)
   }
 
   // If trying to arbitrate, relinquish control if you have the higher ID
-  if (ctx->status == S_ARBITRATION) {
-    ctx->status = S_RECV_HOLD;
-  } else {
-    ctx->status = S_RECV;
+  if (ctx->status == S_ARBITRATING) {
+    if (src_id < SCEWL_ID) {
+      // Clear timeout
+      timers_clear_scum_timeout();
+      data_session->arbitration_lost = 1;
+      ctx->status = S_RECV_WAIT;
+    }
+  } else if (ctx->status != S_ERROR) {
+    ctx->status = S_RECV_WAIT;
   }
 
   return 0;
@@ -735,7 +752,7 @@ static int scum_sync_req_send(struct scum_ctx *ctx)
   ctx->status = S_WAIT_SYNC;
 
   // Setup hardware timer
-  timers_set_sync_timeout(SYNC_REQ_TIMEOUT);
+  timers_set_scum_timeout(SYNC_REQ_TIMEOUT);
 
   return 0;
 }
@@ -758,7 +775,7 @@ static int scum_sync_req_handle(struct scum_ctx *ctx, char *data)
   // Only handle request when idle
   if (ctx->status != S_IDLE) {
     mbedtls_printf("Ignoring sync request message");
-      return S_PASS;
+    return S_PASS;
   }
 
   // Check message length
@@ -846,6 +863,9 @@ static int scum_sync_resp_receive(struct scum_ctx *ctx, char *data)
     mbedtls_printf("Received incorrect sync bytes in synq response");
     return S_SOFT_ERROR;
   }
+
+  // Clear timeout
+  timers_clear_scum_timeout();
 
   // Remove random mask from sequence count
   for (int i = 0; i < SCUM_SEQ_NUMBER_LEN; i++) {
@@ -975,6 +995,7 @@ void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data, size_t dat
         mbedtls_printf("Fatal error handling arbitration request");
         scum_fatal_error(ctx);
       }
+      break;
     case S_DATA:
       ret = scum_data_receive(ctx, src_id, data);
       if (ret == S_SOFT_ERROR) {
@@ -1030,10 +1051,14 @@ void scum_arbitrate(struct scum_ctx *ctx)
 }
 
 // Handle a SCUM sync timeout
-void scum_timeout(struct scum_ctx *ctx)
+void scum_timeout(struct scum_ctx *ctx, char *data, size_t data_len)
 {
-  // If waiting for a sync response, send again -- else ignore
+  // Handle sync timeout or arbitration timeout
   if (ctx->status == S_WAIT_SYNC) {
     scum_sync(ctx);
+  } else if (ctx->status == S_ARBITRATING) {
+    mbedtls_printf("Won arbitration. Sending message");
+    ctx->data_session.arbitration_lost = 0;
+    scum_send(ctx, data, data_len);
   }
 }

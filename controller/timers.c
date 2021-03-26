@@ -11,7 +11,7 @@
  */
 
 unsigned char fin_timer_event = 0;
-unsigned char sync_timer_event = 0;
+unsigned char scum_timer_event = 0;
 static struct dtls_timers *sw_timer_ref;
 
 
@@ -77,13 +77,13 @@ void Timer1A_IRQHandler(void)
 void Timer2A_IRQHandler(void)
 {
   // Check for correct interrupt
-  if (SYNC_TIMER->MIS & TA_INT_BIT){
+  if (SCUM_TIMER->MIS & TA_INT_BIT){
     // Clear interrupt signal
     NVIC_ClearPendingIRQ(Timer2A_IRQn);
-    SYNC_TIMER->ICR |= TA_INT_BIT;
+    SCUM_TIMER->ICR |= TA_INT_BIT;
 
     // Set global flag
-    sync_timer_event = 1;
+    scum_timer_event = 1;
   }
 }
 
@@ -143,16 +143,16 @@ int timers_get_delay(void *data)
   return 0;
 }
 
-// Function used by SCUM to configure a synq request timeout
+// Function used by SCUM to configure a request timeout
 void timers_set_scum_timeout(uint32_t ms)
 {
   uint32_t load_val;
 
   // Immediately disable running HW timers
-  disable_hw_timer(SYNC_TIMER);
+  disable_hw_timer(SCUM_TIMER);
 
   // Clear interrupt state
-  sync_timer_event = 0;
+  scum_timer_event = 0;
 
   // Configure new timer state
   if (ms <= MAX_MS_VAL) {
@@ -160,6 +160,13 @@ void timers_set_scum_timeout(uint32_t ms)
     load_val = ms * TICKS_PER_MS;
 
     // Finally, configure the HW timer
-    config_hw_timer(SYNC_TIMER, load_val);
+    config_hw_timer(SCUM_TIMER, load_val);
   }
+}
+
+// Function used by SCUM to clear a request timeout
+void timers_clear_scum_timeout(void)
+{
+  disable_hw_timer(SCUM_TIMER);
+  scum_timer_event = 0;
 }

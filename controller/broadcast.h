@@ -52,7 +52,7 @@
 #define SCUM_DEFAULT_KDR (2*FRAMES_PER_MSG) // x * 17frames/msg
 
 // Timing requirements
-#define SYNC_REQ_TIMEOUT 10000 // 10 seconds
+#define SYNC_REQ_TIMEOUT 5000 // 5 seconds
 
 /*
  * Custom Types/Structs
@@ -80,8 +80,8 @@ enum scum_status {
   S_WAIT_SYNC,
   S_IDLE,
   S_ARBITRATING,
+  S_RECV_WAIT,
   S_RECV,
-  S_RECV_HOLDING,
   S_DONE
 };
 
@@ -112,6 +112,8 @@ struct scum_data_session {
   scewl_id_t recv_src_id;
 
   uint64_t seq_number;
+
+  uint8_t arbitration_lost;
 
   uint16_t in_received;
   uint16_t out_remaining;
@@ -148,6 +150,7 @@ void scum_init(struct scum_ctx *ctx);
 void scum_handle(struct scum_ctx *ctx, scewl_id_t src_id, char *data, size_t data_len);
 void scum_send(struct scum_ctx *ctx, char *data, size_t data_len);
 void scum_sync(struct scum_ctx *ctx);
-void scum_timeout(struct scum_ctx *ctx);
+void scum_arbitrate(struct scum_ctx *ctx);
+void scum_timeout(struct scum_ctx *ctx, char *data, size_t data_len);
 
 #endif // BROADCAST_H

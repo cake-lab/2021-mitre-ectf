@@ -14,7 +14,7 @@
  */
 
 extern unsigned char fin_timer_event;
-extern unsigned char sync_timer_event;
+extern unsigned char scum_timer_event;
 
 /*
  * Definitions
@@ -23,7 +23,7 @@ extern unsigned char sync_timer_event;
 // Hardware times
 #define INT_TIMER TIMER0
 #define FIN_TIMER TIMER1
-#define SYNC_TIMER TIMER2
+#define SCUM_TIMER TIMER2
 
 // Timer configuration constants
 #define TICKS_PER_MS 12583
@@ -43,6 +43,7 @@ extern unsigned char sync_timer_event;
 
 void timers_set_delay(void *data, uint32_t int_ms, uint32_t fin_ms);
 int timers_get_delay(void *data);
-void timers_set_sync_timeout(uint32_t ms);
+void timers_set_scum_timeout(uint32_t ms);
+void timers_clear_scum_timeout(void);
 
 #endif // TIMERS_H

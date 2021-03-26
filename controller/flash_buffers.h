@@ -31,9 +31,10 @@ struct flash_buf {
 #define PAGES_PER_BUF     (((SCEWL_MAX_DATA_SZ-1)/PAGE_SIZE)+1) // Round up
 
 
-extern struct flash_buf DTLS_FBUF;
-extern struct flash_buf SCUM_FBUF;
 extern struct flash_buf FAA_FBUF;
+extern struct flash_buf DTLS_FBUF;
+extern struct flash_buf SCUM_IN_FBUF;
+extern struct flash_buf SCUM_OUT_FBUF;
 
 
 void flash_commit_buf(struct flash_buf *dst_buf);
