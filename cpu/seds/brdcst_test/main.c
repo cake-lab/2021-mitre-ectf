@@ -7,9 +7,9 @@
  */
 
 #include "scewl_bus_driver/scewl_bus.h"
-#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdio.h>
 
 // DEVICE_ID and INSEC_ID need to be defined at compile
 
@@ -18,13 +18,10 @@
 #define TAG STR(SCEWL_ID) ":"
 #define FMT_MSG(M) TAG M ";"
 
-#define LEN 10
-#define SHIFT 3
-
 #define send_str(M) scewl_send(SCEWL_FAA_ID, strlen(M), M)
 
 int main(void) {
-  char idata[LEN], odata[LEN], strbuf[1000];
+  char idata[LEN], odata[LEN];
   char mask = 1 << SHIFT;
   scewl_id_t src_id, tgt_id;
   int len = -1, ok;
@@ -45,18 +42,17 @@ int main(void) {
     send_str(FMT_MSG("BAD"));
     return 1;
   }
-  fprintf(log, "%d: registered\n", SCEWL_ID);
-  // send_str(FMT_MSG("REG"));
+  send_str(FMT_MSG("REG"));
 
   // wait for start message
+  fprintf(log, "%d: Waiting for start\n", SCEWL_ID);
   scewl_recv(idata, &src_id, &tgt_id, LEN, 1);
 
   while (1) {
     scewl_brdcst(LEN, odata);
-    fprintf(log, "%d: Sent broadcast\n", SCEWL_ID);
-    sleep(15);
+    sleep(30);
 
-    for (int n = 0; n < 7; n++) {
+    for (int n = 0; n < 8; n++) {
       // receive new message
       len = scewl_recv(idata, &src_id, &tgt_id, LEN, 0);
 
@@ -75,22 +71,21 @@ int main(void) {
             }
           }
           if (len != LEN || !ok) {
-            sprintf(strbuf, "%d: Bad message from src_id: %d\n", SCEWL_ID, src_id);
-            fprintf(log, "%s", strbuf);
-            // send_str(strbuf);
-          } else {
-             sprintf(strbuf, "%d: GOOD message from src_id: %d\n", SCEWL_ID, src_id);
-             fprintf(log, "%s", strbuf);
-            // send_str(strbuf);
+            send_str(FMT_MSG("BAD"));
+          }
+          mask |= idata[0];
+          fprintf(log, "%d: Got broadcast from %d\n", SCEWL_ID, src_id);
+          if (mask == 0xff) {
+            fprintf(log, "%d: Got all broadcasts\n", SCEWL_ID);
+            send_str(FMT_MSG("OK"));
           }
         }
       }
     }
   }
-  done:
+done:
 
-  fprintf(log, "%d: Finished\n", SCEWL_ID);
-  // send_str(FMT_MSG("DONE"));
+  send_str(FMT_MSG("DONE"));
 
   // degister
   if (scewl_deregister() != SCEWL_OK) {

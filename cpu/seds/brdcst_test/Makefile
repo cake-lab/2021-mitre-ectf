@@ -22,8 +22,8 @@ __check_defined = \
       $(error Undefined $1))
 
 all:
-	$(call check_defined, SCEWL_ID START_ID END_ID)
-	$(CC) -o main main.c $(SBD)/sbd.o $(IPATH) -DSCEWL_ID=$(SCEWL_ID) -DSTART_ID=$(START_ID) -DEND_ID=$(END_ID)
+	$(call check_defined, SCEWL_ID SHIFT LEN)
+	$(CC) -o main main.c $(SBD)/sbd.o $(IPATH) -DSCEWL_ID=$(SCEWL_ID) -DSHIFT=$(SHIFT) -DLEN=$(LEN)
 
 clean:
 	-rm main 2>/dev/null

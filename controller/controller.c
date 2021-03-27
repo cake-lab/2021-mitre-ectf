@@ -173,10 +173,14 @@ int main() {
   unsigned char memory_buf[40000];
   // Buffer for incoming SCEWL packets
   char scewl_buf[SCEWL_MTU];
+  // Message discard variable
+  char garbage_can;
+
   // Scewl message info
   scewl_hdr_t hdr;
   int len;
   int scum_len = 0;
+
   // Communication protocols
   struct scum_ctx scum_ctx;
   struct dtls_state dtls_state;
@@ -237,42 +241,53 @@ int main() {
 
     // Handle outgoing message from CPU
     if (intf_avail(CPU_INTF)) {
-      if (dtls_state.status != IDLE || (scum_ctx.status != S_IDLE && scum_ctx.status != S_UNSYNC)) {
-        // mbedtls_printf("There is a message waiting on the CPU interface.");
-      } else {
+      // Read header from CPU
+      mbedtls_printf("Receiving message on CPU interface.");
+      read_hdr(CPU_INTF, &hdr, 1);
 
-        // Read header from CPU
-        mbedtls_printf("Receiving message on CPU interface.");
-        read_hdr(CPU_INTF, &hdr, 1);
+      if (hdr.tgt_id == SCEWL_BRDCST_ID) { // Send Broadcast
 
-        if (hdr.tgt_id == SCEWL_BRDCST_ID) { // Send Broadcast
-
+        // Only handle if not doing anything
+        if (scum_ctx.status == S_IDLE) {
           // Send arbitration request before reading the message, since large messages can take a long time
           scum_arbitrate(&scum_ctx);
-          len = read_body_flash(CPU_INTF, &hdr, &SCUM_OUT_FBUF, SCEWL_MAX_DATA_SZ, 1);
-          scum_len = len;
+          scum_len = read_body_flash(CPU_INTF, &hdr, &SCUM_OUT_FBUF, SCEWL_MAX_DATA_SZ, 1);
           // Start the arbitration timer
           scum_arbitrate_continue(&scum_ctx);
-          
+        } else {
+          // Discard
+          read_body(CPU_INTF, &hdr, &garbage_can, 0, 1);
+        }
 
-        } else if (hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
+      } else if (hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
 
+        // Only handle if not doing anything
+        if (dtls_state.status == IDLE) {
           len = read_body_flash(CPU_INTF, &hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
           mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
           dtls_rekey_to_default(&dtls_state, true, false);
           dtls_send_message_to_sss(&dtls_state, flash_get_buf(&DTLS_FBUF), len);
+        } else {
+          // Discard
+          read_body(CPU_INTF, &hdr, &garbage_can, 0, 1);
+        }
 
-        } else if (hdr.tgt_id == SCEWL_FAA_ID) { // Send to FAA
+      } else if (hdr.tgt_id == SCEWL_FAA_ID) { // Send to FAA
 
-          len = read_body_flash(CPU_INTF, &hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
-          handle_faa_send(flash_get_buf(&FAA_FBUF), len);
+        len = read_body_flash(CPU_INTF, &hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
+        handle_faa_send(flash_get_buf(&FAA_FBUF), len);
 
-        } else { // Send Unicast
+      } else { // Send Unicast
 
+        // Only handle if not doing anything
+        if (dtls_state.status == IDLE) {
           len = read_body_flash(CPU_INTF, &hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
           dtls_send_message(&dtls_state, hdr.tgt_id, flash_get_buf(&DTLS_FBUF), len);
-
+        } else {
+          // Discard
+          read_body(CPU_INTF, &hdr, &garbage_can, 0, 1);
         }
+
       }
     }
 
