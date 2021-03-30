@@ -734,6 +734,33 @@ void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t me
 }
 
 /*
+ * Abort whatever the DTLS subsystem is currently doing.
+ */
+void dtls_abort(struct dtls_state *state) {
+	switch (state->status) {
+		case FATAL_ERROR:
+			mbedtls_printf("The DTLS subsystem is in FATAL_ERROR state.");
+			return;
+		case IDLE:
+			return;
+		default:
+			// Should never happen
+			mbedtls_printf("Programming error! Should never happen.");
+			dtls_fatal_error(state, MBEDTLS_EXIT_FAILURE);
+			return;
+		case SENDING_MESSAGE:
+		case TALKING_TO_SSS:
+			mbedtls_ssl_close_notify(&state->client_state.ssl);
+			state->status = IDLE;
+			return;
+		case RECEIVING_MESSAGE:
+			mbedtls_ssl_close_notify(&state->server_state.ssl);
+			state->status = IDLE;
+			return;
+	}
+}
+
+/*
  * Handle a DTLS packet received over the SCEWL bus or the SSS bus.
  */
 void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, size_t data_len) {

@@ -261,16 +261,13 @@ int main() {
 
       } else if (hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
 
-        // Only handle if not doing anything
-        if (dtls_state.status == IDLE) {
-          len = read_body_flash(CPU_INTF, &hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
-          mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
-          dtls_rekey_to_default(&dtls_state, true, false);
-          dtls_send_message_to_sss(&dtls_state, flash_get_buf(&DTLS_FBUF), len);
-        } else {
-          // Discard
-          read_body(CPU_INTF, &hdr, &garbage_can, 0, 1);
+        if (dtls_state.status != IDLE) {
+          dtls_abort(&dtls_state);
         }
+        len = read_body_flash(CPU_INTF, &hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
+        mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
+        dtls_rekey_to_default(&dtls_state, true, false);
+        dtls_send_message_to_sss(&dtls_state, flash_get_buf(&DTLS_FBUF), len);
 
       } else if (hdr.tgt_id == SCEWL_FAA_ID) { // Send to FAA
 

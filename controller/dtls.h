@@ -116,6 +116,7 @@ void dtls_setup_rng(struct dtls_state *state);
 void dtls_setup(struct dtls_state *state, struct flash_buf *message_fbuf);
 void dtls_send_message(struct dtls_state *state, uint16_t dst_id, char *message, size_t message_len);
 void dtls_send_message_to_sss(struct dtls_state *state, char *message, size_t message_len);
+void dtls_abort(struct dtls_state *state);
 void dtls_handle_packet(struct dtls_state *state, uint16_t src_id, char *data, size_t data_len);
 void dtls_check_timers(struct dtls_state *state);
 
