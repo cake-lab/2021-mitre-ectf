@@ -93,27 +93,25 @@ network race conditions while staying resilient to corrupted attacker messages.
 
 The synchronization scheme is sufficient for catching a newly-registered SED up to the network sequence count, but does not solve the challenge of multiple devices sending a message at the same time
 with the same sequence count. The SCUM protocol allows only one device to broadcast at a time, which is achieved by an arbitration phase initiated when an SED wants to send a message.
-The arbitration phase of message transmission lasts 10 seconds, during which other device that have a message to send will have also sent arbitration requests. During an artibtration phase,
-the device with the lowest SCEWL ID will win and be allowed to send, with all other arbiting devices giving up to allow the lower ID to send.
+The arbitration phase of message transmission lasts 10 seconds, during which other device that have a message to send will have also sent arbitration requests. During an arbitration phase,
+the device with the lowest SCEWL ID will win and be allowed to send, with all other arbitrating devices giving up to allow the lower ID to send.
 
 When an SED is defeated during arbitration, it remembers that it still has a message to send. Once the current message has been transmitted, any defeated SED will retry sending and kick off another
 arbitration phase. An SED that wins arbitration keeps a list of all SCEWL IDs it defeated, and following transmission will wait to received a message from all the SEDs it defeated. Once all the
 defeated devices have transmitted, the SED that had previously won will return to an idle state where it may send again.
-The aribtration process is summarized below:
+The arbitration process is summarized below:
 
 1. An IDLE controller gets a broadcast message from the CPU
 2. The SED sends an arbitration request* and configures a 10 second timeout
 3. The SED may receive an arbitration request from another device
     * If the request is from a higher ID device, the SED saves the device ID
-    * If the rquest is from a lower ID device, the SED clears its defeated list, and sets a variable indicating that it lost
+    * If the request is from a lower ID device, the SED clears its defeated list, and sets a variable indicating that it lost
 
-For the winning SED:
-
+**For the winning SED**:  
 1. Upon timeout, the SED sends its message
-2. If devices were defeated during arbitration, remain in the receiving state, receiving messages until all messages from all defeated IDs have been received
+2. If devices were defeated during arbitration, remain in the receiving state, receiving messages until all messages from all defeated IDs have been received  
 
-For a losing SED:
-
+**For the losing SED**:  
 1. Enter a state waiting to receive a message
 2. Upon receiving the message, re-send the arbitration request and start the process all over again
 
