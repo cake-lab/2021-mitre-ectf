@@ -23,7 +23,10 @@ reading the message body.
 In addition to the `scewl_buf` and Flash buffers, **DoS** and **SCUM** each have
 their own MTU-sized buffers (staging buffers) for holding 
 encrypted/decrypted data before being stored into a Flash buffer or sent to
-another device.
+another device. **SCUM** has two buffers: one for messages incoming from SCEWL,
+and one for messages from the CPU that will be sent in the future. In the case
+that another device defeats an SED during arbitration, the message-to-be-sent of
+the defeated SED will remain in the out buffer until it is eventually sent.
 
 ## Flash Buffers
 
@@ -35,9 +38,10 @@ effective locations of each buffer are given in the table below.
 
 | Component Buffer | Address |
 |------------------|---------|
-| FAA Buf          | 0x3C000 |
-| DTLS Buf         | 0x38000 |
-| SCUM Buf         | 0x3C000 |
+| FAA Buf          | 0x30000 |
+| DTLS Buf         | 0x34000 |
+| SCUM In Buf      | 0x38000 |
+| SCUM Out Buf     | 0x3C000 |
 
 The Flash buffers are written to using the standard Flash control process of
 erasing a full page, and then writing 32-bit words into the primed page. The

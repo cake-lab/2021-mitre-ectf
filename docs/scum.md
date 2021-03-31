@@ -40,8 +40,8 @@ The SCUM header format is as follows:
 | length          | 16   |
 | sequence_number | 64   |
 
-The `type` field can take on one of the following values: `SYNC_REQ`, `SYNC_RESP`, `DATA`. All frames in the data channel have a type of `DATA`, while
-frames on the *sync channel*, discussed next, use the other two values.
+The `type` field can take on one of the following values: `ARB_REQ`, `SYNC_REQ`, `SYNC_RESP`, `DATA`. All frames in the data channel have a type of `DATA`, while
+frames on the *sync channel*, discussed next, use the other values.
 
 
 ## Synchronization
@@ -51,7 +51,7 @@ SED registered is given a 'Pre-Synced' status by the SSS, which indicates that t
 an 'UNSYNC' state, and repeatedly sends a synchronization request every 10 seconds until it receives a response.
 
 Synchronization happens on a separate channel from the data stream, called the *sync channel*. The sync channel is NOT subject to the same global sequence number requirement as the data channel. Instead, replay protection
-is provided through a challenge/response transaction. Furthermore, the sync channel and data channel have entirely separate, randomly generated mater cryptographic states that are provided by the SSS during registration.
+is provided through a challenge/response transaction. Furthermore, the sync channel and data channel have entirely separate, randomly generated master cryptographic states that are provided by the SSS during registration.
 The synchronization transaction occurs as follows:
 
 1. Unsynced SED generates a string of random bytes, sends encrypted over the sync channel
@@ -87,6 +87,38 @@ and re-attempting decryption/authentication.
 
 If this test is successful, the SED will keep the new sequence number and keys, and continue as normal. If the test fails, it reverts to its old key state. This is to allow maximum flexibility with strange
 network race conditions while staying resilient to corrupted attacker messages.
+
+
+## Arbitration
+
+The synchronization scheme is sufficient for catching a newly-registered SED up to the network sequence count, but does not solve the challenge of multiple devices sending a message at the same time
+with the same sequence count. The SCUM protocol allows only one device to broadcast at a time, which is achieved by an arbitration phase initiated when an SED wants to send a message.
+The arbitration phase of message transmission lasts 10 seconds, during which other device that have a message to send will have also sent arbitration requests. During an artibtration phase,
+the device with the lowest SCEWL ID will win and be allowed to send, with all other arbiting devices giving up to allow the lower ID to send.
+
+When an SED is defeated during arbitration, it remembers that it still has a message to send. Once the current message has been transmitted, any defeated SED will retry sending and kick off another
+arbitration phase. An SED that wins arbitration keeps a list of all SCEWL IDs it defeated, and following transmission will wait to received a message from all the SEDs it defeated. Once all the
+defeated devices have transmitted, the SED that had previously won will return to an idle state where it may send again.
+The aribtration process is summarized below:
+
+1. An IDLE controller gets a broadcast message from the CPU
+2. The SED sends an arbitration request* and configures a 10 second timeout
+3. The SED may receive an arbitration request from another device
+    * If the request is from a higher ID device, the SED saves the device ID
+    * If the rquest is from a lower ID device, the SED clears its defeated list, and sets a variable indicating that it lost
+
+For the winning SED:
+
+1. Upon timeout, the SED sends its message
+2. If devices were defeated during arbitration, remain in the receiving state, receiving messages until all messages from all defeated IDs have been received
+
+For a losing SED:
+
+1. Enter a state waiting to receive a message
+2. Upon receiving the message, re-send the arbitration request and start the process all over again
+
+
+\*An arbitration request is exactly the same as a *Sync Request*, but with `ARB_REQ` in the type field
 
 
 ## Authentication
