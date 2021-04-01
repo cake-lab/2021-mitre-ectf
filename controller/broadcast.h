@@ -157,6 +157,7 @@ void scum_send(struct scum_ctx *ctx, char *data, size_t data_len);
 void scum_sync(struct scum_ctx *ctx);
 void scum_arbitrate(struct scum_ctx *ctx);
 void scum_arbitrate_continue(struct scum_ctx *ctx);
+int scum_try_queue(struct scum_ctx *ctx);
 void scum_timeout(struct scum_ctx *ctx, char *data, size_t data_len);
 
 #endif // BROADCAST_H

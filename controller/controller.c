@@ -177,13 +177,21 @@ int main() {
   char garbage_can;
 
   // Scewl message info
-  scewl_hdr_t hdr;
-  int len;
+  scewl_hdr_t cpu_hdr;
+  scewl_hdr_t rad_hdr;
+  scewl_hdr_t sss_hdr;
+  int cpu_len = 0;
+  int rad_len = 0;
+  int sss_len = 0;
   int scum_len = 0;
+
+  // Status
+  unsigned char sss_hold = 0;
 
   // Communication protocols
   struct scum_ctx scum_ctx;
   struct dtls_state dtls_state;
+
   // RNG for masked AES
   mbedtls_hmac_drbg_context aes_hmac_drbg;
 
@@ -240,80 +248,88 @@ int main() {
     }
 
     // Handle outgoing message from CPU
-    if (intf_avail(CPU_INTF)) {
+    if (intf_avail(CPU_INTF) && !sss_hold) {
       // Read header from CPU
       mbedtls_printf("Receiving message on CPU interface.");
-      read_hdr(CPU_INTF, &hdr, 1);
+      read_hdr(CPU_INTF, &cpu_hdr, 1);
 
-      if (hdr.tgt_id == SCEWL_BRDCST_ID) { // Send Broadcast
+      if (cpu_hdr.tgt_id == SCEWL_BRDCST_ID) { // Send Broadcast
 
         // Only handle if not doing anything
         if (scum_ctx.status == S_IDLE) {
           // Send arbitration request before reading the message, since large messages can take a long time
           scum_arbitrate(&scum_ctx);
-          scum_len = read_body_flash(CPU_INTF, &hdr, &SCUM_OUT_FBUF, SCEWL_MAX_DATA_SZ, 1);
+          scum_len = read_body_flash(CPU_INTF, &cpu_hdr, &SCUM_OUT_FBUF, SCEWL_MAX_DATA_SZ, 1);
           // Start the arbitration timer
           scum_arbitrate_continue(&scum_ctx);
+        } else if (scum_try_queue(&scum_ctx) == 0) {
+          // If a message can be queued, read the message to be sent in the next arbitration window
+          scum_len = read_body_flash(CPU_INTF, &cpu_hdr, &SCUM_OUT_FBUF, SCEWL_MAX_DATA_SZ, 1);
         } else {
           // Discard
-          read_body(CPU_INTF, &hdr, &garbage_can, 0, 1);
+          read_body(CPU_INTF, &cpu_hdr, &garbage_can, 0, 1);
         }
 
-      } else if (hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
+      } else if (cpu_hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
 
-        if (dtls_state.status != IDLE) {
-          dtls_abort(&dtls_state);
-        }
-        len = read_body_flash(CPU_INTF, &hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
-        mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
-        dtls_rekey_to_default(&dtls_state, true, false);
-        dtls_send_message_to_sss(&dtls_state, flash_get_buf(&DTLS_FBUF), len);
+        sss_hold = 1;
 
-      } else if (hdr.tgt_id == SCEWL_FAA_ID) { // Send to FAA
+      } else if (cpu_hdr.tgt_id == SCEWL_FAA_ID) { // Send to FAA
 
-        len = read_body_flash(CPU_INTF, &hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
-        handle_faa_send(flash_get_buf(&FAA_FBUF), len);
+        cpu_len = read_body_flash(CPU_INTF, &cpu_hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
+        handle_faa_send(flash_get_buf(&FAA_FBUF), cpu_len);
 
       } else { // Send Unicast
 
         // Only handle if not doing anything
         if (dtls_state.status == IDLE) {
-          len = read_body_flash(CPU_INTF, &hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
-          dtls_send_message(&dtls_state, hdr.tgt_id, flash_get_buf(&DTLS_FBUF), len);
+          cpu_len = read_body_flash(CPU_INTF, &cpu_hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
+          dtls_send_message(&dtls_state, cpu_hdr.tgt_id, flash_get_buf(&DTLS_FBUF), cpu_len);
         } else {
           // Discard
-          read_body(CPU_INTF, &hdr, &garbage_can, 0, 1);
+          read_body(CPU_INTF, &cpu_hdr, &garbage_can, 0, 1);
         }
 
+      }
+    }
+
+    // Hold SSS messages until DTLS is idle
+    if (sss_hold) {
+      if (dtls_state.status == IDLE) {
+        sss_hold = 0;
+        cpu_len = read_body_flash(CPU_INTF, &cpu_hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
+        mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
+        dtls_rekey_to_default(&dtls_state, true, false);
+        dtls_send_message_to_sss(&dtls_state, flash_get_buf(&DTLS_FBUF), cpu_len);
       }
     }
 
     // handle incoming radio message
     if (intf_avail(RAD_INTF)) {
       // Read header from antenna
-      read_hdr(RAD_INTF, &hdr, 1);
-      if (hdr.src_id == SCEWL_ID) { // Ignore our own outgoing messages
-        read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
+      read_hdr(RAD_INTF, &rad_hdr, 1);
+      if (rad_hdr.src_id == SCEWL_ID) { // Ignore our own outgoing messages
+        read_body(RAD_INTF, &rad_hdr, scewl_buf, sizeof(scewl_buf), 1);
       } else {
 
-        if ((hdr.src_id == SCEWL_FAA_ID) && ((hdr.tgt_id == SCEWL_ID) || (hdr.tgt_id == SCEWL_BRDCST_ID))) { // Handle FAA
+        if ((rad_hdr.src_id == SCEWL_FAA_ID) && ((rad_hdr.tgt_id == SCEWL_ID) || (rad_hdr.tgt_id == SCEWL_BRDCST_ID))) { // Handle FAA
 
-          len = read_body_flash(RAD_INTF, &hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
-          handle_faa_recv(flash_get_buf(&FAA_FBUF), len);
+          rad_len = read_body_flash(RAD_INTF, &rad_hdr, &FAA_FBUF, SCEWL_MAX_DATA_SZ, 1);
+          handle_faa_recv(flash_get_buf(&FAA_FBUF), rad_len);
 
-        } else if (hdr.tgt_id == SCEWL_BRDCST_ID) { // Handle Broadcast
+        } else if (rad_hdr.tgt_id == SCEWL_BRDCST_ID) { // Handle Broadcast
 
-          len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
-          scum_handle(&scum_ctx, hdr.src_id, scewl_buf, len);
+          rad_len = read_body(RAD_INTF, &rad_hdr, scewl_buf, sizeof(scewl_buf), 1);
+          scum_handle(&scum_ctx, rad_hdr.src_id, scewl_buf, rad_len);
 
-        } else if (hdr.tgt_id == SCEWL_ID && dtls_state.status != TALKING_TO_SSS) { // Handle Unicast
+        } else if (rad_hdr.tgt_id == SCEWL_ID && dtls_state.status != TALKING_TO_SSS) { // Handle Unicast
 
-          len = read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
-          dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
+          rad_len = read_body(RAD_INTF, &rad_hdr, scewl_buf, sizeof(scewl_buf), 1);
+          dtls_handle_packet(&dtls_state, rad_hdr.src_id, scewl_buf, rad_len);
 
         } else { // Ignore messages for other devices
 
-          read_body(RAD_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
+          read_body(RAD_INTF, &rad_hdr, scewl_buf, sizeof(scewl_buf), 1);
 
         }
       }
@@ -323,14 +339,14 @@ int main() {
     if (intf_avail(SSS_INTF)) {
       if (dtls_state.status != TALKING_TO_SSS) {
         mbedtls_printf("Discarding unsolicited packet on SSS interface.");
-        read_msg(SSS_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
+        read_msg(SSS_INTF, &sss_hdr, scewl_buf, sizeof(scewl_buf), 1);
       } else {
         // Read message from wire
         mbedtls_printf("Receiving packet on SSS interface.");
-        len = read_msg(SSS_INTF, &hdr, scewl_buf, sizeof(scewl_buf), 1);
-        if (hdr.src_id == SCEWL_SSS_ID && hdr.tgt_id == SCEWL_ID) {
+        sss_len = read_msg(SSS_INTF, &sss_hdr, scewl_buf, sizeof(scewl_buf), 1);
+        if (sss_hdr.src_id == SCEWL_SSS_ID && sss_hdr.tgt_id == SCEWL_ID) {
           mbedtls_printf("Received packet from SSS.");
-          dtls_handle_packet(&dtls_state, hdr.src_id, scewl_buf, len);
+          dtls_handle_packet(&dtls_state, sss_hdr.src_id, scewl_buf, sss_len);
         } else {
           mbedtls_printf("Received bogon on SSS interface.");
         }

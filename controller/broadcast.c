@@ -1137,6 +1137,32 @@ void scum_arbitrate_continue(struct scum_ctx *ctx)
   }
 }
 
+// Set SCUM to send a message during the next arbitration window
+int scum_try_queue(struct scum_ctx *ctx)
+{
+  struct scum_data_session *data_session;
+  int ret = 1;
+
+  data_session = &ctx->data_session;
+
+  // Only set a message to send if all conditions are met:
+  // 1. SCUM is receiving something
+  // 2. SCUM does not have a message pending
+  // 3. SCUM is not waiting for other devices it defeated
+  if (ctx->status != S_RECV_WAIT && ctx->status != S_RECV && ctx->status != S_DISCARD) {
+    mbedtls_printf("Refusing to set a pending message since not receiving");
+  } else if (data_session->arbitration_lost == 0 && data_session->defeated_dev_count == 0) {
+    // Set pending message
+    mbedtls_printf("Setting pending message for next arbitration");
+    data_session->arbitration_lost = 1;
+    ret = 0;
+  } else {
+    mbedtls_printf("A message is already pending, or waiting for other messages");
+  }
+
+  return ret;
+}
+
 // Handle a SCUM sync timeout
 void scum_timeout(struct scum_ctx *ctx, char *data, size_t data_len)
 {
