@@ -185,9 +185,6 @@ int main() {
   int sss_len = 0;
   int scum_len = 0;
 
-  // Status
-  unsigned char sss_hold = 0;
-
   // Communication protocols
   struct scum_ctx scum_ctx;
   struct dtls_state dtls_state;
@@ -248,7 +245,7 @@ int main() {
     }
 
     // Handle outgoing message from CPU
-    if (intf_avail(CPU_INTF) && !sss_hold) {
+    if (intf_avail(CPU_INTF) && dtls_state.status == IDLE && scum_ctx.status != S_WAIT_SYNC) {
       // Read header from CPU
       mbedtls_printf("Receiving message on CPU interface.");
       read_hdr(CPU_INTF, &cpu_hdr, 1);
@@ -272,7 +269,10 @@ int main() {
 
       } else if (cpu_hdr.tgt_id == SCEWL_SSS_ID) { // Send to SSS
 
-        sss_hold = 1;
+        cpu_len = read_body_flash(CPU_INTF, &cpu_hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
+        mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
+        dtls_rekey_to_default(&dtls_state, true, false);
+        dtls_send_message_to_sss(&dtls_state, flash_get_buf(&DTLS_FBUF), cpu_len);
 
       } else if (cpu_hdr.tgt_id == SCEWL_FAA_ID) { // Send to FAA
 
@@ -281,26 +281,9 @@ int main() {
 
       } else { // Send Unicast
 
-        // Only handle if not doing anything
-        if (dtls_state.status == IDLE) {
-          cpu_len = read_body_flash(CPU_INTF, &cpu_hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
-          dtls_send_message(&dtls_state, cpu_hdr.tgt_id, flash_get_buf(&DTLS_FBUF), cpu_len);
-        } else {
-          // Discard
-          read_body(CPU_INTF, &cpu_hdr, &garbage_can, 0, 1);
-        }
-
-      }
-    }
-
-    // Hold SSS messages until DTLS is idle
-    if (sss_hold) {
-      if (dtls_state.status == IDLE) {
-        sss_hold = 0;
         cpu_len = read_body_flash(CPU_INTF, &cpu_hdr, &DTLS_FBUF, SCEWL_MAX_DATA_SZ, 1);
-        mbedtls_printf("CPU requested to talk to SSS. Rekeying to provision keys.");
-        dtls_rekey_to_default(&dtls_state, true, false);
-        dtls_send_message_to_sss(&dtls_state, flash_get_buf(&DTLS_FBUF), cpu_len);
+        dtls_send_message(&dtls_state, cpu_hdr.tgt_id, flash_get_buf(&DTLS_FBUF), cpu_len);
+
       }
     }
 

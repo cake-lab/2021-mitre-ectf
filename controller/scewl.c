@@ -63,7 +63,7 @@ int read_body(intf_t *intf, scewl_hdr_t *hdr, char *data, size_t n, int blocking
 
   // Throw away rest of message if too long
   for (int i = 0; hdr->len > max && i < hdr->len - max; i++) {
-    intf_readb(intf, 0);
+    intf_readb(intf, blocking);
   }
 
   // Report if not blocking and full message not received
@@ -121,7 +121,7 @@ int read_body_flash(intf_t *intf, scewl_hdr_t *hdr, struct flash_buf *dst_buf, s
 
   // Throw away rest of message if too long
   for (int i = 0; hdr->len > max && i < hdr->len - max; i++) {
-    intf_readb(intf, 0);
+    intf_readb(intf, blocking);
   }
 
   // Commit leftovers to flash
