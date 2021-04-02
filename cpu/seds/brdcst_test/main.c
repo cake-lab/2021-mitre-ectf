@@ -72,6 +72,7 @@ int main(void) {
           }
           if (len != LEN || !ok) {
             send_str(FMT_MSG("BAD"));
+            fprintf(log, "%s", FMT_MSG("BAD - length or bytes not okay"));
           }
           mask |= idata[0];
           fprintf(log, "%d: Got broadcast from %d\n", SCEWL_ID, src_id);
