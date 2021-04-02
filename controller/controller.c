@@ -245,7 +245,7 @@ int main() {
     }
 
     // Handle outgoing message from CPU
-    if (intf_avail(CPU_INTF) && dtls_state.status == IDLE && scum_ctx.status != S_WAIT_SYNC) {
+    if (intf_avail(CPU_INTF) && dtls_state.status == IDLE && scum_ctx.status != S_WAIT_SYNC && scum_ctx.status != S_ARBITRATING) {
       // Read header from CPU
       mbedtls_printf("Receiving message on CPU interface.");
       read_hdr(CPU_INTF, &cpu_hdr, 1);
