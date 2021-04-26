@@ -2,6 +2,16 @@
 
 This repository contains the WPI2/GOATS team's submission for the 2021 MITRE Collegiate eCTF. It is based on the [example reference system](https://github.com/mitre-cyber-academy/2021-ectf-insecure-example) provided by MITRE.
 
+## Team Members
+
+* Jake Grycel
+* Ryan LaPointe
+* Galahad Wernsing
+
+Advisor: Dr. Robert Walls
+
+Associated with [The Cake Lab](https://cake.wpi.edu/) at [Worcester Polytechnic Institute](https://www.wpi.edu/).
+
 ## Project Structure
 The code is structured the same as the example code, which is as follows:
 
